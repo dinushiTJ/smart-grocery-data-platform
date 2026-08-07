@@ -1,0 +1,1142 @@
+<title>Smart Grocery Data Lakehouse: how it works</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232f8f5b' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9h16l-1.5 9.2a2 2 0 0 1-2 1.8H7.5a2 2 0 0 1-2-1.8z'/%3E%3Cpath d='m8.5 9 2.2-5M15.5 9l-2.2-5M9.5 13v3M14.5 13v3'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: light;
+  --ground:#f1f5ee; --ground-2:#e7eee2; --card:#ffffff; --card-2:#eaf0e6; --line:#d3ded0;
+  --ink:#0e1710; --ink-2:#43533f; --ink-3:#6f8069;
+  --leaf:#1f6b45; --leaf-2:#2f8f5b; --leaf-soft:#dff0e4;
+  --clem:#a8481a; --clem-2:#cf5f22; --clem-soft:#fbe6d9;
+  --plum:#5b3f96; --plum-soft:#ece4fa;
+  --indigo:#1c5cab; --indigo-soft:#dfe9f9;
+  --teal-soft:#d8ecea;
+  --bronze:#9c5f2e; --silverm:#5c7684; --goldm:#96731a; --teal:#136b68;
+  --s1:#2a78d6; --s2:#eb6834; --track:#dee7d9;
+  --shadow:0 1px 2px rgba(14,23,16,.05), 0 10px 30px -20px rgba(14,23,16,.4);
+  --shadow-lift:0 2px 6px rgba(14,23,16,.07), 0 18px 40px -24px rgba(14,23,16,.5);
+
+  /* spacing scale, 4px base — every gap and pad on the page comes from here */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+  --sp-sec:72px;                     /* one vertical rhythm for every section */
+  --pad-card:20px 22px;              /* one padding for every card-like surface */
+  --pad-card-lg:24px 26px;           /* one padding for the larger panels */
+  /* three radii, nothing in between */
+  --r-sm:9px; --r:14px; --r-pill:999px;
+  /* one duration and one easing, so nothing moves at its own speed */
+  --dur:220ms; --ease:cubic-bezier(.22,.61,.36,1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --ground:#0c110d; --ground-2:#111811; --card:#161d17; --card-2:#1f2820; --line:#2b362c;
+    --ink:#e9f2e7; --ink-2:#a4b5a2; --ink-3:#7a8c78;
+    --leaf:#5ecb8b; --leaf-2:#77dba1; --leaf-soft:#16301f;
+    --clem:#f0894f; --clem-2:#ffa06a; --clem-soft:#331d0f;
+    --plum:#b49bf0; --plum-soft:#231b38;
+    --indigo:#86b6ef; --indigo-soft:#152437;
+    --teal-soft:#0f2c2b;
+    --bronze:#d99155; --silverm:#a6c0cd; --goldm:#e2b944; --teal:#4fb8b2;
+    --s1:#3987e5; --s2:#d95926; --track:#242d24;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 32px -22px rgba(0,0,0,.9);
+    --shadow-lift:0 2px 8px rgba(0,0,0,.55), 0 20px 46px -26px rgba(0,0,0,1);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground:#0c110d; --ground-2:#111811; --card:#161d17; --card-2:#1f2820; --line:#2b362c;
+  --ink:#e9f2e7; --ink-2:#a4b5a2; --ink-3:#7a8c78;
+  --leaf:#5ecb8b; --leaf-2:#77dba1; --leaf-soft:#16301f;
+  --clem:#f0894f; --clem-2:#ffa06a; --clem-soft:#331d0f;
+  --plum:#b49bf0; --plum-soft:#231b38;
+  --indigo:#86b6ef; --indigo-soft:#152437;
+  --teal-soft:#0f2c2b;
+  --bronze:#d99155; --silverm:#a6c0cd; --goldm:#e2b944; --teal:#4fb8b2;
+  --s1:#3987e5; --s2:#d95926; --track:#242d24;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 32px -22px rgba(0,0,0,.9);
+  --shadow-lift:0 2px 8px rgba(0,0,0,.55), 0 20px 46px -26px rgba(0,0,0,1);
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:16px; line-height:1.62; -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.tag,.kpi-v,.hero-mark,.flow-title,.step h4,.stage-n {
+  font-family:ui-rounded,"SF Pro Rounded","Avenir Next","Nunito",system-ui,sans-serif;
+}
+code,pre,.bar-value,.kpi-v,.a-r,.pill,.flow-count {
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+.wrap { max-width:1100px; margin:0 auto; padding:0 22px; }
+/* One vertical rhythm inside a section: every stacked block is separated by the same
+   gap. This used to be two inline style="margin-top:16px" attributes, which is exactly
+   why section 07 was missed and its cards butted straight against the panel below. */
+section .wrap > * + * { margin-top:var(--sp-4); }
+section .wrap > .sec-head + * { margin-top:0; }   /* .sec-head already owns its space below */
+a { color:var(--accent,var(--leaf)); text-underline-offset:3px; }
+:focus-visible { outline:2.5px solid var(--accent,var(--leaf)); outline-offset:3px; border-radius:var(--r-sm); }
+/* Each section owns one hue. Every accent below is >=4.5:1 as text on every
+   surface in BOTH themes, so the same token can carry icons, links and labels. */
+.ac-green  { --accent:var(--leaf);   --accent-soft:var(--leaf-soft); }
+.ac-teal   { --accent:var(--teal);   --accent-soft:var(--teal-soft); }
+.ac-indigo { --accent:var(--indigo); --accent-soft:var(--indigo-soft); }
+.ac-plum   { --accent:var(--plum);   --accent-soft:var(--plum-soft); }
+.ac-clem   { --accent:var(--clem);   --accent-soft:var(--clem-soft); }
+.ico { flex:none; vertical-align:middle; }
+.sr { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+
+/* ---------- hero ---------- */
+.hero {
+  position:relative; overflow:hidden; padding:78px 0 60px;
+  background:
+    radial-gradient(1100px 420px at 12% -14%, var(--leaf-soft) 0%, transparent 62%),
+    radial-gradient(760px 340px at 96% 6%, var(--clem-soft) 0%, transparent 58%),
+    var(--ground);
+  border-bottom:1px solid var(--line);
+}
+.hero-mark {
+  display:inline-flex; align-items:center; gap:9px; font-size:12.5px; font-weight:700;
+  letter-spacing:.03em; color:var(--leaf); background:var(--card);
+  border:1px solid var(--line); padding:7px 15px 7px 11px; border-radius:var(--r-pill); margin-bottom:var(--sp-5);
+}
+h1 { font-size:clamp(32px,5.4vw,55px); line-height:1.06; letter-spacing:-.028em; margin:0 0 18px; text-wrap:balance; }
+h1 em { font-style:normal; color:var(--leaf); }
+.lede { font-size:clamp(17px,2.1vw,20.5px); color:var(--ink-2); margin:0; }
+.kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--sp-4); margin-top:var(--sp-6); align-items:stretch; }
+.kpi {
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:var(--pad-card); box-shadow:var(--shadow);
+  display:flex; flex-direction:column;
+}
+.kpi .kpi-n { margin-top:auto; }        /* notes sit on one baseline, whatever their length */
+.kpi-head { display:flex; align-items:center; gap:8px; color:var(--ink-3); }
+.kpi-k { font-size:10.5px; text-transform:uppercase; letter-spacing:.11em; font-weight:800; }
+.kpi-v { font-size:34px; font-weight:600; letter-spacing:-.025em; margin-top:9px; line-height:1;
+  font-variant-numeric:tabular-nums; }
+.kpi-n { font-size:12.5px; color:var(--ink-2); padding-top:var(--sp-2); }
+.kpi[data-tone="good"] { --tint:var(--leaf); }
+.kpi[data-tone="bad"] { --tint:var(--clem); }
+.kpi[data-tone="good"] .kpi-v, .kpi[data-tone="bad"] .kpi-v { color:var(--tint); }
+.kpi[data-tone="good"] .kpi-head, .kpi[data-tone="bad"] .kpi-head { color:var(--tint); }
+.snapshot { font-size:12.5px; color:var(--ink-3); margin-top:20px; display:flex; align-items:center; gap:8px; }
+
+/* ---------- sections ---------- */
+section { padding:var(--sp-sec) 0; border-bottom:1px solid var(--line); }
+section:nth-of-type(even) { background:var(--ground-2); }
+/* the number sits above the heading so every line of a section shares one left edge */
+.sec-head { display:block; margin-bottom:var(--sp-5); }
+.tag {
+  display:inline-grid; place-items:center; min-width:34px; height:26px; padding:0 9px;
+  background:var(--ink); color:var(--ground); font-size:12px; font-weight:800; letter-spacing:.04em;
+  clip-path:polygon(0 0,100% 0,100% 100%,8px 100%,0 calc(100% - 8px)); border-radius:4px;
+  margin:0 0 12px;
+}
+h2 { font-size:clamp(24px,3.5vw,34px); letter-spacing:-.022em; margin:0 0 7px; text-wrap:balance; }
+.sec-sub { color:var(--ink-2); margin:0; }
+
+/* ---------- reader note ---------- */
+.note { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-4); align-items:stretch; }
+.note > div:last-child:nth-child(odd) { grid-column:1 / -1; }
+.note > div {
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:var(--pad-card); display:flex; gap:var(--sp-3); box-shadow:var(--shadow);
+}
+.note .ico { color:var(--accent,var(--leaf)); margin-top:3px; }
+.note h3 { font-size:15.5px; margin:0 0 5px; }
+.note p { margin:0; color:var(--ink-2); font-size:14.5px; }
+
+/* ---------- architecture diagram ---------- */
+.figure { margin:0; }
+.figure-scroll { overflow-x:auto; padding-bottom:6px; }
+.diagram { width:100%; min-width:900px; height:auto; display:block; color:var(--ink-3); }
+.figure-hint { display:none; font-size:12px; color:var(--ink-3); margin:0 0 10px; }
+@media (max-width:960px) { .figure-hint { display:block; } }
+.diagram text { stroke:none; paint-order:fill; }
+.dg-zone { fill:var(--ink-3); font-size:12.5px; font-weight:800; letter-spacing:.13em; }
+.dg-divider { stroke:var(--line); stroke-width:1.5; stroke-dasharray:2 6; stroke-linecap:round; }
+.dg-node { fill:var(--card); stroke:var(--line); stroke-width:1.3; }
+.dg-band { fill:color-mix(in srgb, var(--tint,var(--ink-3)) 22%, var(--card));
+  stroke:var(--tint,var(--line)); stroke-width:1.4; }
+.dg-vault-box { fill:none; stroke:var(--ink-3); stroke-width:1.6; stroke-dasharray:9 7; }
+.dg-mark { opacity:.55; }
+.dg-rim { fill:none; stroke:var(--tint,var(--line)); stroke-width:1.4; }
+.dg-plate { fill:color-mix(in srgb, var(--tint,var(--ink-3)) 16%, var(--card)); }
+.dg-b { fill:var(--ink-2); font-size:13.5px; }
+.dg-dot { fill:var(--ink-3); }
+.dg-chip { fill:var(--card); stroke:var(--line); stroke-width:1.1; }
+.dg-chip-t { fill:var(--ink-2); font-size:12.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.dg-brace { fill:none; stroke:var(--ink-3); stroke-width:1.4; stroke-dasharray:6 5; }
+.dg-step { fill:var(--card); stroke:var(--tint,var(--leaf)); stroke-width:1.6; }
+.dg-box { fill:var(--tint-soft,var(--card-2)); stroke:var(--tint,var(--line)); stroke-width:1.4; }
+.dg-zr { fill:var(--zone,var(--ink-3)); fill-opacity:.05; stroke:var(--zone,var(--ink-3));
+  stroke-width:1.3; stroke-dasharray:7 6; stroke-linecap:round; }
+.dg-zchip { fill:var(--card); stroke:var(--zone,var(--ink-3)); stroke-width:1.1; }
+.dg-zt { fill:var(--zone,var(--ink-2)); font-size:11px; font-weight:800; letter-spacing:.06em; }
+.dg-stepdot { fill:var(--tint,var(--ink-2)); stroke:var(--ground); stroke-width:2.5; }
+.dg-stepn { fill:var(--ground); font-size:12px; font-weight:800;
+  font-family:ui-rounded,"SF Pro Rounded","Avenir Next",system-ui,sans-serif; }
+.dg-z-net { --zone:var(--ink-3); }
+.dg-z-host { --zone:var(--leaf); }
+.dg-z-stack { --zone:var(--teal); }
+.dg-z-air { --zone:var(--plum); }
+.dg-orch { fill:var(--card); stroke:var(--tint,var(--line)); stroke-width:1.4; }
+.dg-tab { fill:var(--card-2); stroke:var(--line); stroke-width:1.2; }
+.dg-tab .dg-t, .dg-tab-t { font-size:13px; }
+.dg-vault-r { fill:none; stroke:var(--ink-3); stroke-width:1.8; }
+.dg-vault-t { fill:var(--ink-2); font-size:14px; font-weight:700; letter-spacing:.02em; }
+.dg-vault-lg { fill:var(--ground); stroke:var(--ink-3); stroke-width:1.6; }
+.dg-vault-ico { color:var(--ink-2); }
+.dg-ico { color:var(--tint,var(--ink-2)); }
+.dg-t { fill:var(--tint,var(--ink)); font-size:17px; font-weight:700;
+  font-family:ui-rounded,"SF Pro Rounded","Avenir Next",system-ui,sans-serif; }
+.dg-s { fill:var(--ink-2); font-size:13px; }
+.dg-e { fill:var(--ink-3); font-size:13px; font-weight:600; }
+.dg-arrow { stroke:var(--ink-3); stroke-width:1.7; fill:none; stroke-linejoin:round; }
+.dg-dash { stroke-dasharray:5 5; }
+.dg-good { stroke:var(--leaf); } text.dg-good { fill:var(--leaf); stroke:none; }
+.dg-bad { stroke:var(--clem); } text.dg-bad { fill:var(--clem); stroke:none; }
+.mk-good { fill:var(--leaf); } .mk-bad { fill:var(--clem); }
+.dg-src-a { --tint:var(--teal); }
+.dg-src-b { --tint:var(--s2); }
+.dg-ingest { --tint:var(--s1); }
+.dg-check { --tint:var(--leaf); }
+.dg-dbtstep { --tint:var(--plum); }
+.dg-bronze { --tint:var(--bronze); --tint-soft:color-mix(in srgb, var(--bronze) 13%, transparent); }
+.dg-silver { --tint:var(--silverm); --tint-soft:color-mix(in srgb, var(--silverm) 14%, transparent); }
+.dg-gold { --tint:var(--goldm); --tint-soft:color-mix(in srgb, var(--goldm) 14%, transparent); }
+.dg-audit { --tint:var(--ink-2); --tint-soft:transparent; }
+.dg-quar { --tint:var(--clem); --tint-soft:color-mix(in srgb, var(--clem) 15%, transparent); }
+.dg-serve { --tint:var(--teal); }
+.dg-tab-p, .dg-tab-q { --tint:var(--ink-2); }
+.dg-sched { --tint:var(--ink-3); }
+.dg-events, .dg-spark, .dg-lake { --tint:var(--plum);
+  --tint-soft:color-mix(in srgb, var(--plum) 14%, transparent); }
+.dg-stream { stroke:var(--plum); } text.dg-stream { fill:var(--plum); stroke:none; }
+.mk-stream { fill:var(--plum); }
+figcaption { font-size:13.5px; color:var(--ink-3); margin-top:16px; }
+
+/* ---------- medallion flow ---------- */
+/* one shared column grid: every card is exactly the same width, every gutter the same */
+.flow-main, .flow-audit {
+  display:grid; grid-template-columns:1fr 44px 1fr 44px 1fr; align-items:stretch;
+}
+.flow-audit { margin-top:14px; }
+.flow-audit .flow-arrow { grid-column:2; }
+.flow-audit .flow-node { grid-column:3; }
+/* Nudged 4px left to meet the elbow's endpoint. transform, not margin: a negative
+   margin on a grid item also makes the card 4px wider than the other three. */
+.flow-audit .flow-node { transform:translateX(-4px); }
+.flow-node {
+  min-width:0; text-align:left; cursor:pointer; color:inherit; font:inherit;
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:var(--pad-card); box-shadow:var(--shadow);
+  transition:border-color var(--dur) var(--ease), transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.flow-node { background:linear-gradient(var(--card),var(--card)) padding-box; }
+.flow-node:hover { border-color:var(--tint); transform:translateY(-3px); box-shadow:var(--shadow-lift); }
+.flow-audit .flow-node:hover { transform:translate(-4px,-3px); }
+.flow-node[data-active="true"] { background:color-mix(in srgb, var(--tint) 10%, var(--card)); }
+.flow-node[data-active="true"] { border-color:var(--tint); }
+.flow-node[data-flow="bronze"] { --tint:var(--bronze); }
+.flow-node[data-flow="silver"] { --tint:var(--silverm); }
+.flow-node[data-flow="gold"] { --tint:var(--goldm); }
+.flow-node[data-flow="audit"] { --tint:var(--clem); }
+.flow-head { display:flex; align-items:center; gap:9px; color:var(--tint); margin-bottom:7px; }
+.flow-title { font-weight:700; font-size:15.5px; letter-spacing:-.012em; }
+.flow-count { display:block; font-size:12.5px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+.flow-what { display:block; font-size:12.5px; color:var(--ink-3); margin-top:6px; }
+.flow-arrow { display:grid; place-items:center; color:var(--ink-3); }
+.flow-caption { font-size:12.5px; color:var(--ink-3); margin:var(--sp-3) 0 0; }
+/* Always present for screen readers: the desktop layout says "Audit hangs off the
+   Bronze->Silver gutter" with geometry alone, which conveys nothing to a screen reader
+   and nothing at all once the grid collapses to one column. */
+.flow-branch {
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
+@media (max-width:700px) {
+  .flow-main, .flow-audit { grid-template-columns:1fr; }
+  .flow-audit .flow-branch, .flow-audit .flow-arrow, .flow-audit .flow-node { grid-column:1; }
+  /* Rotate the glyph, not the grid cell, so the chain runs top to bottom with the
+     cell geometry intact. */
+  .flow-main .flow-arrow { height:var(--sp-6); }
+  .flow-main .flow-arrow .ico { transform:rotate(90deg); }
+  /* The audit connector is already drawn "down, then right", so it needs no rotation
+     here: left unturned it points out of the chain and into the indented Audit card,
+     which is what actually happens. Without this, Audit reads as a fourth step after
+     Gold, which is the opposite of the truth. */
+  .flow-audit { margin-top:0; }
+  .flow-audit .flow-arrow { height:var(--sp-5); justify-items:start; padding-left:var(--sp-2); }
+  .flow-audit .flow-node, .flow-audit .flow-node:hover { transform:none; }
+  .flow-audit .flow-node { margin-left:var(--sp-5); border-style:dashed; }
+  .flow-audit .flow-node:hover { transform:translateY(-3px); }
+  .flow-branch {
+    position:static; width:auto; height:auto; overflow:visible; clip:auto;
+    white-space:normal; border:0;
+    margin:var(--sp-2) 0 0 var(--sp-5); font-size:12.5px; color:var(--clem);
+  }
+}
+
+/* ---------- layers ---------- */
+.layers { display:block; }
+.layers[data-layer="bronze"] { --tint:var(--bronze); }
+.layers[data-layer="silver"] { --tint:var(--silverm); }
+.layers[data-layer="gold"]   { --tint:var(--goldm); }
+.layers[data-layer="audit"]  { --tint:var(--clem); }
+.layer-panel {
+  background:var(--card); border:1px solid var(--line);
+  border-top:3px solid var(--tint,var(--leaf)); border-radius:var(--r);
+  padding:var(--pad-card-lg); box-shadow:var(--shadow);
+}
+.layer-panel > p { margin:0 0 17px; color:var(--ink-2); }
+.table-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; }
+.table-list li { display:flex; flex-wrap:wrap; align-items:center; gap:9px; padding-top:12px; border-top:1px solid var(--line); }
+.table-list code { font-size:13.5px; color:var(--ink); }
+.pill { font-size:11.5px; background:var(--card-2); color:var(--ink-2); padding:3px 9px; border-radius:var(--r-pill);
+  font-variant-numeric:tabular-nums; }
+.table-note { flex-basis:100%; font-size:13.5px; color:var(--ink-2); }
+
+/* ---------- stages ---------- */
+.stages { display:flex; flex-direction:column; gap:var(--sp-4); }
+.stage {
+  display:grid; grid-template-columns:56px minmax(0,1fr); gap:var(--sp-4);
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:var(--pad-card-lg); box-shadow:var(--shadow);
+  transition:border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.stage:hover { border-color:var(--accent,var(--leaf)); box-shadow:var(--shadow-lift); }
+.stage-side { display:flex; flex-direction:column; align-items:center; gap:8px; }
+.stage-ico {
+  display:grid; place-items:center; width:42px; height:42px; border-radius:var(--r-sm);
+  background:var(--accent-soft,var(--leaf-soft)); color:var(--accent,var(--leaf));
+}
+.stage-n { font-size:11.5px; font-weight:800; color:var(--ink-3); letter-spacing:.06em; }
+.stage h3 { font-size:18.5px; margin:0 0 6px; letter-spacing:-.014em; }
+.stage p { margin:0; color:var(--ink-2); }
+.cmd { display:flex; align-items:center; gap:10px; margin-top:15px; }
+.cmd pre {
+  margin:0; flex:1; overflow-x:auto; background:var(--card-2); border:1px solid var(--line);
+  border-radius:var(--r-sm); padding:11px 14px; font-size:13px;
+}
+.copy {
+  display:inline-flex; align-items:center; gap:6px; flex:none; font:inherit; font-size:12.5px;
+  padding:8px 13px; border-radius:var(--r-sm); border:1px solid var(--line); background:var(--card);
+  color:var(--ink-2); cursor:pointer;
+  transition:color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.copy .ico { opacity:0; width:0; transition:opacity .15s, width .15s; }
+.copy[data-done="true"] { color:var(--accent,var(--leaf)); border-color:var(--accent,var(--leaf)); }
+.copy[data-done="true"] .ico { opacity:1; width:15px; }
+.copy:hover { border-color:var(--accent,var(--leaf)); color:var(--accent,var(--leaf)); }
+details { margin-top:16px; }
+summary {
+  display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:13.5px;
+  font-weight:700; color:var(--accent,var(--leaf)); list-style:none;
+}
+summary::-webkit-details-marker { display:none; }
+details[open] summary .ico { transform:rotate(90deg); }
+summary .ico { transition:transform .2s; }
+.hood { margin:14px 0 0; padding:0 0 0 19px; display:flex; flex-direction:column; gap:12px; }
+.hood li { font-size:14.5px; color:var(--ink-2); }
+.hood strong { color:var(--ink); }
+
+/* ---------- stepper ---------- */
+.tracks { display:flex; gap:var(--sp-2); margin-bottom:0; flex-wrap:wrap; }
+.track-btn {
+  font:inherit; font-size:14px; padding:10px 17px; border-radius:var(--r-pill); cursor:pointer;
+  border:1px solid var(--line); background:var(--card); color:var(--ink-2);
+  transition:background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.track-btn[aria-pressed="true"] { background:var(--ink); color:var(--ground); border-color:var(--ink); }
+.stepper { background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:var(--pad-card-lg); box-shadow:var(--shadow); }
+.dots { display:flex; gap:7px; margin-bottom:19px; }
+.dot { flex:1; height:5px; border-radius:var(--r-pill); border:0; padding:0; cursor:pointer; background:var(--track); transition:background var(--dur) var(--ease); }
+.dot[data-on="true"] { background:var(--accent,var(--leaf)); }
+.steps { list-style:none; margin:0; padding:0; }
+.step-head { display:flex; align-items:center; gap:13px; }
+.step-ico { color:var(--ink-3); }
+.step[data-tone="good"] .step-ico { color:var(--leaf); }
+.step[data-tone="bad"] .step-ico { color:var(--clem); }
+.step-n { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:800; }
+.step h4 { margin:0; font-size:19.5px; letter-spacing:-.014em; }
+.step[data-tone="good"] h4 { color:var(--leaf); }
+.step[data-tone="bad"] h4 { color:var(--clem); }
+.step p { color:var(--ink-2); margin:11px 0 15px; }
+.step pre { margin:0; background:var(--card-2); border:1px solid var(--line); border-radius:var(--r-sm); padding:15px 17px; font-size:13px; line-height:1.55; overflow-x:auto; }
+.stepper-controls { display:flex; gap:9px; margin-top:18px; }
+.btn {
+  display:inline-flex; align-items:center; gap:7px; font:inherit; font-size:14px; padding:10px 18px;
+  border-radius:var(--r-sm); cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--ink);
+}
+.btn:disabled { opacity:.4; cursor:not-allowed; }
+.btn-primary { background:var(--accent,var(--leaf)); border-color:var(--accent,var(--leaf)); color:#fff; font-weight:650; }
+:root[data-theme="dark"] .btn-primary { color:#08160e; }
+@media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .btn-primary { color:#08160e; } }
+
+/* ---------- panels & charts ---------- */
+.grid2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-4); align-items:stretch; }
+.panel { background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:var(--pad-card-lg); box-shadow:var(--shadow); }
+.panel-head { display:flex; align-items:center; gap:var(--sp-2); margin-bottom:3px; color:var(--accent,var(--leaf)); }
+.panel h3 { font-size:15.5px; margin:0; color:var(--ink); }
+.panel .cap { font-size:13px; color:var(--ink-3); margin:0 0 17px; }
+.bars { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--sp-2); }
+.bar { display:grid; grid-template-columns:minmax(96px,42%) 1fr auto; align-items:center; gap:12px; border-radius:6px; }
+.bar:hover, .bar:focus-visible { background:var(--card-2); }
+.bar-label { font-size:13px; color:var(--ink-2); overflow-wrap:anywhere; }
+.bar-track { background:var(--track); height:10px; border-radius:4px; }
+.bar-fill { display:block; height:100%; width:0; background:var(--s1); border-radius:0 5px 5px 0; }
+.bar-value { font-size:13px; font-variant-numeric:tabular-nums; }
+.cols { list-style:none; margin:0; padding:0; display:flex; gap:var(--sp-2); align-items:flex-end; height:200px; }
+.cols-tight { gap:var(--sp-2); }   /* both column charts share one gap, so they read as one system */
+.col { flex:1; display:flex; flex-direction:column; height:100%; min-width:0; }
+.col-stack { flex:1; display:flex; flex-direction:column; justify-content:flex-end; gap:2px; border-bottom:1px solid var(--line); }
+.seg { border-radius:4px 4px 0 0; height:0; }
+.seg-a { background:var(--s1); }
+.seg-b { background:var(--s2); }
+.col-stack .seg-a:not(:only-child) { border-radius:0; }
+.col[data-empty="true"] .col-stack { background:repeating-linear-gradient(135deg,var(--track) 0 5px,transparent 5px 10px); }
+.col:hover .seg, .col:focus-visible .seg { filter:brightness(1.14); }
+.col-tick { font-size:10.5px; color:var(--ink-3); text-align:center; padding-top:7px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.legend { display:flex; gap:16px; font-size:13px; color:var(--ink-2); margin-top:14px; }
+.legend span { display:inline-flex; align-items:center; gap:7px; }
+.swatch { width:10px; height:10px; border-radius:3px; }
+
+/* ---------- tables ---------- */
+.scroll { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; font-size:13.5px; }
+th { text-align:left; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); font-weight:800; padding:0 12px 9px 0; border-bottom:1px solid var(--line); white-space:nowrap; }
+td { padding:9px 12px 9px 0; border-bottom:1px solid var(--line); color:var(--ink-2); }
+.a-r { text-align:right; font-variant-numeric:tabular-nums; }
+
+/* ---------- mini cards ---------- */
+.cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-4); align-items:stretch; }
+/* an odd last card spans the row rather than leaving a hole beside it — the same
+   rule .note already uses, so every grid on the page ends flush */
+.cards > *:last-child:nth-child(odd) { grid-column:1 / -1; }
+.mini { background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:var(--pad-card); box-shadow:var(--shadow); }
+.mini-head { display:flex; align-items:center; gap:var(--sp-2); margin-bottom:7px; color:var(--accent,var(--leaf)); }
+.mini h3 { font-size:15.5px; margin:0; color:var(--ink); }
+.mini p { margin:0; font-size:14.5px; color:var(--ink-2); }
+.mini[data-tone="warn"] .mini-head { color:var(--clem); }
+.mini[data-tone="warn"] { border-color:color-mix(in srgb, var(--clem) 28%, var(--line)); }
+
+/* ---------- evidence screenshots ---------- */
+/* Same grid, same gap and the same card padding as .cards, so the captures line
+   up with every other two-column block on the page. */
+.shots { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-4); align-items:stretch; }
+.shot {
+  margin:0; display:flex; flex-direction:column;
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:var(--sp-3); box-shadow:var(--shadow);
+  transition:border-color var(--dur) var(--ease), transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.shot:hover, .shot:focus-within { border-color:var(--accent); transform:translateY(-3px); box-shadow:var(--shadow-lift); }
+/* The frame holds its shape and clips its contents even when the image fails, so a
+   missing file can never spill alt text across the grid. The colour reset stops that
+   alt text inheriting the accent from the surrounding link. */
+.shot a {
+  display:block; border-radius:var(--r-sm); overflow:hidden; background:var(--card-2);
+  aspect-ratio:16 / 10; line-height:1.4; font-size:12px; color:var(--ink-3);
+  text-decoration:none;
+}
+.shot--tall a { aspect-ratio:3 / 4; }
+/* A fixed aspect box keeps every thumbnail exactly the same height whatever the
+   capture's own dimensions, and `contain` shows the whole frame — cropping would
+   cut the right-hand edge off the wide UI captures. */
+.shot img { width:100%; height:100%; object-fit:contain; object-position:center; display:block; }
+.shot figcaption { font-size:13.5px; color:var(--ink-2); padding:var(--sp-3) var(--sp-2) var(--sp-1); margin-top:auto; }
+.shot-t { display:block; font-weight:700; color:var(--ink); margin-bottom:var(--sp-1); }
+.shot-run {
+  display:inline-block; margin-top:var(--sp-2); font-size:11.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  background:var(--card-2); color:var(--ink-3); padding:3px 9px; border-radius:var(--r-pill);
+}
+.shots-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.shots-note { font-size:13.5px; color:var(--ink-3); margin:0; }
+@media (max-width:960px) { .shots-3 { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:700px) { .shots, .shots-3 { grid-template-columns:minmax(0,1fr); } }
+
+/* ---------- footer ---------- */
+footer { padding:48px 0 78px; font-size:13.5px; color:var(--ink-3); }
+footer p { margin:0 0 8px; }
+
+.theme {
+  position:fixed; top:16px; right:16px; z-index:50;
+  display:grid; place-items:center; width:40px; height:40px; padding:0;
+  border-radius:50%; background:var(--card); border:1px solid var(--line);
+  box-shadow:var(--shadow); color:var(--ink-3); cursor:pointer;
+  transition:color .16s, border-color .16s, transform .16s;
+}
+.theme:hover { color:var(--leaf); border-color:var(--leaf); }
+.theme:active { transform:scale(.92); }
+.theme:focus-visible { outline:2px solid var(--leaf); outline-offset:3px; }
+.theme .ico { grid-area:1/1; transition:opacity .18s, transform .28s; }
+.theme .ico-moon { opacity:0; transform:rotate(-45deg) scale(.6); }
+:root[data-theme="dark"] .theme .ico-sun { opacity:0; transform:rotate(45deg) scale(.6); }
+:root[data-theme="dark"] .theme .ico-moon { opacity:1; transform:none; }
+@media (prefers-color-scheme:dark) {
+  :root:not([data-theme]) .theme .ico-sun { opacity:0; transform:rotate(45deg) scale(.6); }
+  :root:not([data-theme]) .theme .ico-moon { opacity:1; transform:none; }
+}
+@media (max-width:560px) { .theme { top:10px; right:10px; } }
+@media print { .theme { display:none; } }
+#tip {
+  position:fixed; z-index:40; pointer-events:none; opacity:0; background:var(--ink);
+  color:var(--ground); font-size:12.5px; padding:7px 11px; border-radius:8px; max-width:290px;
+  transition:opacity .13s;
+}
+#tip[data-on="true"] { opacity:1; }
+
+@media (max-width:880px) {
+  .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .layers, .grid2, .cards, .note { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width:560px) {
+  .stage { grid-template-columns:minmax(0,1fr); gap:10px; }
+  .stage-side { flex-direction:row; gap:11px; }
+  .bar { grid-template-columns:minmax(0,1fr) auto; }
+  .bar-track { grid-column:1 / -1; }
+  .cols { height:158px; }
+  .cols-tight .col-tick { display:none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition:none !important; animation:none !important; }
+}
+</style>
+
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem("sg-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) { /* private mode: fall back to the OS preference */ }
+})();
+</script>
+
+<button class="theme" type="button" data-theme-toggle title="Switch theme">
+  <svg class="ico ico-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.4M12 19v2.4M2.6 12h2.4M19 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7"/></svg>
+  <svg class="ico ico-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 13.6A8.2 8.2 0 0 1 10.4 4a8.4 8.4 0 1 0 9.6 9.6z"/></svg>
+  <span class="sr" data-theme-label>Switch to dark theme</span>
+</button>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-mark"><svg class="ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 9h16l-1.5 9.2a2 2 0 0 1-2 1.8H7.5a2 2 0 0 1-2-1.8z"/><path d="m8.5 9 2.2-5M15.5 9l-2.2-5M9.5 13v3M14.5 13v3"/></svg><span>Smart Grocery Data Lakehouse</span></div>
+    <h1>A grocery price pipeline that <em>shows its working</em>.</h1>
+    <p class="lede">It pulls real product data, invents supermarket prices for it, then checks every
+    single record before letting it into the warehouse, and keeps a permanent, queryable record of
+    everything it threw away and why.</p>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-head"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span class="kpi-k">Records read</span></div>
+        <div class="kpi-v" data-fig="run.source" data-count="441">0</div><div class="kpi-n">products and prices in the latest run</div></div>
+      <div class="kpi" data-tone="good"><div class="kpi-head"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><span class="kpi-k">Loaded</span></div>
+        <div class="kpi-v" data-fig="run.valid" data-count="389">0</div><div class="kpi-n">passed every check</div></div>
+      <div class="kpi" data-tone="bad"><div class="kpi-head"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m9.4 9.4 5.2 5.2M14.6 9.4l-5.2 5.2"/></svg><span class="kpi-k">Quarantined</span></div>
+        <div class="kpi-v" data-fig="run.rejected" data-count="52">0</div><div class="kpi-n">rejected, with a reason recorded</div></div>
+      <div class="kpi"><div class="kpi-head"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 5 6v5.6c0 4 2.9 7.7 7 8.9 4.1-1.2 7-4.9 7-8.9V6z"/><path d="m9.2 12.2 2 2 3.7-4"/></svg><span class="kpi-k">Rejection rate</span></div>
+        <div class="kpi-v" data-fig="run.reject_pct" data-count="11.8" data-suffix="%" data-decimals="1">0</div>
+        <div class="kpi-n">expected, because the bad data is deliberate</div></div>
+    </div>
+    <p class="snapshot"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 2"/></svg><span data-fig="hero.snapshot">Every number here was read from the warehouse on 07 August 2026 at 00:15 UTC. It is a snapshot, not a live feed.</span></p>
+  </div>
+</header>
+
+<main>
+<section class="ac-teal">
+  <div class="wrap">
+    <div class="note">
+      <div><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2.5 2.5 0 0 1 2 1 2.5 2.5 0 0 1 2-1h4.5A1.5 1.5 0 0 1 20 5.5v12a1.5 1.5 0 0 1-1.5 1.5H14a2.5 2.5 0 0 0-2 1 2.5 2.5 0 0 0-2-1H5.5A1.5 1.5 0 0 1 4 17.5z"/><path d="M12 5v14"/></svg><div><h3>New to data pipelines?</h3><p>Read only the main text. It avoids
+      jargon and explains each stage in terms of what actually happens to a record, with no prior
+      knowledge needed.</p></div></div>
+      <div><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><div><h3>Here for the engineering?</h3><p>Open the
+      <strong>Under the hood</strong> panels. They carry the commands, table names, file paths and the
+      traps that cost real debugging time.</p></div></div>
+      <div><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12h15m0 0-5.5-5.5M19 12l-5.5 5.5"/></svg><div><h3>How far to read</h3><p>Most of this page is one
+      complete story: files in, checks, warehouse, dashboard. A second, separate route for the same
+      prices appears only in stages 09 and 10 and in section 07. Skip those and nothing is left
+      dangling.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="ac-indigo">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">01</span>
+      <div><h2>How it all fits together</h2>
+      <p class="sec-sub">Two sources at the top, a warehouse in the middle, dashboards at the bottom,
+      and one branch, at the point where a record either earns its place or gets set aside. A second,
+      separate route for the same kind of data has its own diagram in section 07.</p></div>
+    </div>
+    <figure class="figure">
+      <p class="figure-hint">Scroll the diagram sideways to see the whole flow.</p>
+      <div class="figure-scroll"><svg class="diagram" viewBox="-30 -14 1210 1836" role="img" aria-label="Eight stages flowing top to bottom. Open Food Facts and a price generator feed ingestion, which lands timestamped files. The bronze layer stores every record verbatim. Validation and cleaning then splits the flow in two, side by side: clean data goes left into the silver layer, bad data goes right into the audit schema, whose quarantine table keeps the record along with the reason it failed. dbt reads silver and builds the gold layer, and Metabase serves two dashboard tabs. Bronze, silver, audit and gold are all schemas inside one PostgreSQL database, drawn as a dashed boundary, and Airflow runs the middle stages once a day. A second route for the same price data is drawn separately in section 07."><defs><marker id="arrow" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6.2" markerHeight="6.2" orient="auto"><path d="M0 1.2 L9 5 L0 8.8 z" fill="currentColor"/></marker><marker id="arrow-good" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6.2" markerHeight="6.2" orient="auto"><path d="M0 1.2 L9 5 L0 8.8 z" class="mk-good"/></marker><marker id="arrow-bad" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6.2" markerHeight="6.2" orient="auto"><path d="M0 1.2 L9 5 L0 8.8 z" class="mk-bad"/></marker></defs><g class="dg-item dg-vault" data-delay="11"><rect class="dg-vault-box" x="18" y="324" width="1144" height="1180" rx="22"/><rect class="dg-vault-lg" x="44" y="308" width="239" height="32" rx="16"/><g class="dg-ico dg-vault-ico" transform="translate(55 314.5) scale(0.8)" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></g><text class="dg-vault-t" x="84" y="329">one PostgreSQL database</text></g><g class="dg-item dg-src-a" data-delay="0"><rect class="dg-band" x="40" y="0" width="530" height="100" rx="16"/><circle class="dg-stepdot" cx="103.0" cy="50.0" r="14"/><text class="dg-stepn" x="103.0" y="54.5" text-anchor="middle">1</text><rect class="dg-plate" x="163.0" y="19" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(176.0 32) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 18.5a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.5-1.4 4.8 4.8 0 0 1 .6 9.5z"/><path d="M12 11v5m0 0 2-2m-2 2-2-2"/></g><text class="dg-t" x="261.0" y="35">Open Food Facts</text><text class="dg-s" x="261.0" y="59">Real, public product data:</text><text class="dg-s" x="261.0" y="77">names, brands, nutrition</text></g><g class="dg-item dg-src-b" data-delay="1"><rect class="dg-band" x="610" y="0" width="530" height="100" rx="16"/><rect class="dg-plate" x="733.0" y="19" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(746.0 32) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.5 9.2a2 2 0 0 1-2 1.8H7.5a2 2 0 0 1-2-1.8z"/><path d="m8.5 9 2.2-5M15.5 9l-2.2-5"/></g><text class="dg-t" x="831.0" y="35">Generated prices</text><text class="dg-s" x="831.0" y="59">Five fictional stores,</text><text class="dg-s" x="831.0" y="77">with faults injected on purpose</text></g><polyline class="dg-arrow" points="305,100 305,134 590,134"/><polyline class="dg-arrow" points="875,100 875,134 590,134 590,168" marker-end="url(#arrow)"/><text class="dg-e" x="604" y="128">fetch and generate</text><g class="dg-item dg-ingest" data-delay="2"><rect class="dg-band" x="40" y="168" width="1100" height="124" rx="16"/><circle class="dg-stepdot" cx="103.0" cy="230.0" r="14"/><text class="dg-stepn" x="103.0" y="234.5" text-anchor="middle">2</text><rect class="dg-plate" x="163.0" y="199" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(176.0 212) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></g><text class="dg-t" x="261.0" y="215">Ingestion</text><text class="dg-s" x="261.0" y="239">Fetch and generate, then land the files.</text><text class="dg-s" x="261.0" y="257">Nothing is judged yet.</text><rect class="dg-chip" x="556.5" y="193" width="147" height="32" rx="9"/><text class="dg-chip-t" x="630.0" y="214" text-anchor="middle">products.json</text><rect class="dg-chip" x="556.5" y="235" width="120" height="32" rx="9"/><text class="dg-chip-t" x="616.5" y="256" text-anchor="middle">prices.csv</text><circle class="dg-dot" cx="803.5" cy="204" r="2.6"/><text class="dg-b" x="817.5" y="208">Timestamped filenames</text><circle class="dg-dot" cx="803.5" cy="230" r="2.6"/><text class="dg-b" x="817.5" y="234">Newest file wins</text><circle class="dg-dot" cx="803.5" cy="256" r="2.6"/><text class="dg-b" x="817.5" y="260">Written to data/bronze/</text></g><polyline class="dg-arrow " points="590,292 590,360" marker-end="url(#arrow)"/><text class="dg-e " x="602" y="309" text-anchor="start">lands raw files</text><g class="dg-item dg-bronze" data-delay="3"><rect class="dg-band" x="40" y="360" width="1100" height="124" rx="16"/><circle class="dg-stepdot" cx="103.0" cy="422.0" r="14"/><text class="dg-stepn" x="103.0" y="426.5" text-anchor="middle">3</text><rect class="dg-plate" x="163.0" y="391" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(176.0 404) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5z"/><path d="M3 8.5 12 13l9-4.5M12 13v7"/></g><text class="dg-t" x="261.0" y="407">Bronze layer</text><text class="dg-s" x="261.0" y="431">Every record exactly as it arrived,</text><text class="dg-s" x="261.0" y="449">stored as JSONB.</text><rect class="dg-chip" x="556.5" y="385" width="138" height="32" rx="9"/><text class="dg-chip-t" x="625.5" y="406" text-anchor="middle">raw_products</text><rect class="dg-chip" x="556.5" y="427" width="120" height="32" rx="9"/><text class="dg-chip-t" x="616.5" y="448" text-anchor="middle">raw_prices</text><circle class="dg-dot" cx="803.5" cy="396" r="2.6"/><text class="dg-b" x="817.5" y="400">No cleaning, no dropping</text><circle class="dg-dot" cx="803.5" cy="422" r="2.6"/><text class="dg-b" x="817.5" y="426">Replayable history</text><circle class="dg-dot" cx="803.5" cy="448" r="2.6"/><text class="dg-b" x="817.5" y="452">Written before validation</text></g><polyline class="dg-arrow " points="590,484 590,552" marker-end="url(#arrow)"/><text class="dg-e " x="602" y="522.0" text-anchor="start">reads every record</text><g class="dg-item dg-check" data-delay="4"><rect class="dg-band" x="40" y="552" width="1100" height="124" rx="16"/><circle class="dg-stepdot" cx="103.0" cy="614.0" r="14"/><text class="dg-stepn" x="103.0" y="618.5" text-anchor="middle">4</text><rect class="dg-plate" x="163.0" y="574" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(176.0 587) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5.6c0 4 2.9 7.7 7 8.9 4.1-1.2 7-4.9 7-8.9V6z"/><path d="m9.2 12.2 2 2 3.7-4"/></g><text class="dg-t" x="261.0" y="590">Validation and cleaning</text><text class="dg-s" x="261.0" y="614">Deterministic rules decide pass or reject.</text><text class="dg-s" x="261.0" y="632">An optional local LLM adds judgement,</text><text class="dg-s" x="261.0" y="650">never a reversal.</text><circle class="dg-dot" cx="803.5" cy="575" r="2.6"/><text class="dg-b" x="817.5" y="579">Barcode, name and price checks</text><circle class="dg-dot" cx="803.5" cy="601" r="2.6"/><text class="dg-b" x="817.5" y="605">Duplicate event IDs caught per file</text><circle class="dg-dot" cx="803.5" cy="627" r="2.6"/><text class="dg-b" x="817.5" y="631">Unknown store or barcode rejected</text><circle class="dg-dot" cx="803.5" cy="653" r="2.6"/><text class="dg-b" x="817.5" y="657">Failures are written to audit, with the reason</text></g><polyline class="dg-arrow dg-good" points="305,676 305,744" marker-end="url(#arrow-good)"/><text class="dg-e dg-good" x="317" y="714.0" text-anchor="start">clean data</text><polyline class="dg-arrow dg-bad" points="875,676 875,744" marker-end="url(#arrow-bad)"/><text class="dg-e dg-bad" x="887" y="714.0" text-anchor="start">bad data</text><g class="dg-item dg-silver" data-delay="5"><rect class="dg-band" x="40" y="744" width="530" height="340" rx="16"/><circle class="dg-stepdot" cx="103.0" cy="914.0" r="14"/><text class="dg-stepn" x="103.0" y="918.5" text-anchor="middle">5</text><rect class="dg-plate" x="163.0" y="759" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(176.0 772) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 13.7 9l5.5 1.7-5.5 1.7L12 18l-1.7-5.6L4.8 10.7 10.3 9z"/><path d="M18.5 4v3M20 5.5h-3"/></g><text class="dg-t" x="261.0" y="775">Silver layer</text><text class="dg-s" x="261.0" y="799">The trustworthy copy.</text><text class="dg-s" x="261.0" y="817">A price cannot exist</text><text class="dg-s" x="261.0" y="835">without its product.</text><rect class="dg-chip" x="261.0" y="869" width="102" height="32" rx="9"/><text class="dg-chip-t" x="312.0" y="889" text-anchor="middle">products</text><rect class="dg-chip" x="261.0" y="911" width="96" height="32" rx="9"/><text class="dg-chip-t" x="309.0" y="931" text-anchor="middle">prices</text><rect class="dg-chip" x="261.0" y="953" width="96" height="32" rx="9"/><text class="dg-chip-t" x="309.0" y="973" text-anchor="middle">stores</text><circle class="dg-dot" cx="261.0" cy="1009" r="2.6"/><text class="dg-b" x="275.0" y="1013">Typed and length-capped</text><circle class="dg-dot" cx="261.0" cy="1035" r="2.6"/><text class="dg-b" x="275.0" y="1039">Upserted on barcode</text><circle class="dg-dot" cx="261.0" cy="1061" r="2.6"/><text class="dg-b" x="275.0" y="1065">Foreign keys enforced</text></g><g class="dg-item dg-quar" data-delay="6"><rect class="dg-band" x="610" y="744" width="530" height="340" rx="16"/><rect class="dg-plate" x="733.0" y="759" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(746.0 772) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V3.8A.8.8 0 0 1 9.8 3h4.4a.8.8 0 0 1 .8.8V5M8.5 11h7M8.5 15h4"/></g><text class="dg-t" x="831.0" y="775">Audit</text><text class="dg-s" x="831.0" y="799">The paper trail. Rejected records</text><text class="dg-s" x="831.0" y="817">land in the quarantine table,</text><text class="dg-s" x="831.0" y="835">with the reason they failed.</text><rect class="dg-chip" x="831.0" y="869" width="120" height="32" rx="9"/><text class="dg-chip-t" x="891.0" y="889" text-anchor="middle">quarantine</text><rect class="dg-chip" x="831.0" y="911" width="147" height="32" rx="9"/><text class="dg-chip-t" x="904.5" y="931" text-anchor="middle">pipeline_runs</text><rect class="dg-chip" x="831.0" y="953" width="219" height="32" rx="9"/><text class="dg-chip-t" x="940.5" y="973" text-anchor="middle">ai_validation_results</text><circle class="dg-dot" cx="831.0" cy="1009" r="2.6"/><text class="dg-b" x="845.0" y="1013">Every run, rejection and AI verdict</text><circle class="dg-dot" cx="831.0" cy="1035" r="2.6"/><text class="dg-b" x="845.0" y="1039">Each tied to the run that rejected it</text><circle class="dg-dot" cx="831.0" cy="1061" r="2.6"/><text class="dg-b" x="845.0" y="1065">Never reaches silver</text></g><polyline class="dg-arrow " points="305,1084 305,1152" marker-end="url(#arrow)"/><text class="dg-e " x="317" y="1122.0" text-anchor="start">reads as a source</text><g class="dg-item dg-dbtstep" data-delay="7"><rect class="dg-band" x="40" y="1152" width="1100" height="124" rx="16"/><circle class="dg-stepdot" cx="103.0" cy="1214.0" r="14"/><text class="dg-stepn" x="103.0" y="1218.5" text-anchor="middle">6</text><rect class="dg-plate" x="163.0" y="1183" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(176.0 1196) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8.5 4.4L12 11.8 3.5 7.4z"/><path d="m3.5 12 8.5 4.4 8.5-4.4M3.5 16.6 12 21l8.5-4.4"/></g><text class="dg-t" x="261.0" y="1199">dbt transformations</text><text class="dg-s" x="261.0" y="1223">SQL models in version control,</text><text class="dg-s" x="261.0" y="1241">carrying their own tests.</text><rect class="dg-chip" x="556.5" y="1177" width="96" height="32" rx="9"/><text class="dg-chip-t" x="604.5" y="1198" text-anchor="middle">1 model</text><rect class="dg-chip" x="556.5" y="1219" width="96" height="32" rx="9"/><text class="dg-chip-t" x="604.5" y="1240" text-anchor="middle">4 tests</text><circle class="dg-dot" cx="803.5" cy="1188" r="2.6"/><text class="dg-b" x="817.5" y="1192">Reads silver through sources.yml</text><circle class="dg-dot" cx="803.5" cy="1214" r="2.6"/><text class="dg-b" x="817.5" y="1218">Materialised as views</text><circle class="dg-dot" cx="803.5" cy="1240" r="2.6"/><text class="dg-b" x="817.5" y="1244">dbt run &amp;&amp; dbt test</text></g><polyline class="dg-arrow " points="590,1276 590,1344" marker-end="url(#arrow)"/><text class="dg-e " x="602" y="1314.0" text-anchor="start">builds</text><g class="dg-item dg-gold" data-delay="8"><rect class="dg-band" x="40" y="1344" width="1100" height="124" rx="16"/><circle class="dg-stepdot" cx="103.0" cy="1406.0" r="14"/><text class="dg-stepn" x="103.0" y="1410.5" text-anchor="middle">7</text><rect class="dg-plate" x="163.0" y="1375" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(176.0 1388) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="14" r="5"/><path d="M9 9.3 7 3h10l-2 6.3M12 12v4M10.4 13.6h3.2"/></g><text class="dg-t" x="261.0" y="1391">Gold layer</text><text class="dg-s" x="261.0" y="1415">Aggregates shaped for reading,</text><text class="dg-s" x="261.0" y="1433">not for storage.</text><rect class="dg-chip" x="556.5" y="1390" width="201" height="32" rx="9"/><text class="dg-chip-t" x="657.0" y="1411" text-anchor="middle">daily_price_summary</text><circle class="dg-dot" cx="803.5" cy="1380" r="2.6"/><text class="dg-b" x="817.5" y="1384">Per day, per product</text><circle class="dg-dot" cx="803.5" cy="1406" r="2.6"/><text class="dg-b" x="817.5" y="1410">Average, minimum, maximum</text><circle class="dg-dot" cx="803.5" cy="1432" r="2.6"/><text class="dg-b" x="817.5" y="1436">Stores reporting</text></g><polyline class="dg-arrow " points="590,1468 590,1536" marker-end="url(#arrow)"/><text class="dg-e " x="602" y="1525" text-anchor="start">queries</text><g class="dg-item dg-serve" data-delay="9"><rect class="dg-band" x="40" y="1536" width="1100" height="124" rx="16"/><circle class="dg-stepdot" cx="103.0" cy="1598.0" r="14"/><text class="dg-stepn" x="103.0" y="1602.5" text-anchor="middle">8</text><rect class="dg-plate" x="163.0" y="1558" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(176.0 1571) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8.5 20v-6M13 20V8.5M17.5 20v-9"/></g><text class="dg-t" x="261.0" y="1574">Metabase dashboard</text><text class="dg-s" x="261.0" y="1598">Two tabs over the same warehouse:</text><text class="dg-s" x="261.0" y="1616">is the pipeline healthy,</text><text class="dg-s" x="261.0" y="1634">and what do the prices say.</text><rect class="dg-chip" x="556.5" y="1561" width="96" height="32" rx="9"/><text class="dg-chip-t" x="604.5" y="1582" text-anchor="middle">Pricing</text><rect class="dg-chip" x="556.5" y="1603" width="138" height="32" rx="9"/><text class="dg-chip-t" x="625.5" y="1624" text-anchor="middle">Data quality</text><circle class="dg-dot" cx="803.5" cy="1572" r="2.6"/><text class="dg-b" x="817.5" y="1576">Run health and rejections</text><circle class="dg-dot" cx="803.5" cy="1598" r="2.6"/><text class="dg-b" x="817.5" y="1602">Price spread and promotions</text><circle class="dg-dot" cx="803.5" cy="1624" r="2.6"/><text class="dg-b" x="817.5" y="1628">SQL kept in the repo</text></g><g class="dg-item dg-sched" data-delay="10"><rect class="dg-band" x="40" y="1728" width="1100" height="88" rx="16"/><rect class="dg-plate" x="163.0" y="1746" width="52" height="52" rx="14"/><g class="dg-ico" transform="translate(176.0 1759) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 2"/></g><text class="dg-t" x="261.0" y="1762">Airflow</text><text class="dg-s" x="261.0" y="1786">Runs steps 2 to 4 once a day, two retries.</text></g></svg></div>
+      <figcaption>Every record takes the same route until validation, where it splits into the two
+      branches drawn side by side: clean records go left into silver and on to the dashboards, rejected
+      records go right and stop, filed in <code>audit.quarantine</code> with the reason they failed.
+      Both branches, and everything in the dashed boundary, are schemas in the same PostgreSQL
+      database. The optional local LLM review sits inside the validation step and can only add
+      rejections, never remove them. There is a second, separate route for the same kind of data,
+      drawn on its own in section 07.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="ac-green">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">02</span>
+      <div><h2>Four shelves, one warehouse</h2>
+      <p class="sec-sub">Data moves through four layers, each with a different promise about how much
+      you can trust it. Select one to see the tables inside it. These four are the database; the
+      streaming route in section 07 keeps its data in files outside it.</p></div>
+    </div>
+    <div class="flow" role="tablist" aria-label="Warehouse layers">
+      <div class="flow-main">
+        <button class="flow-node anim" type="button" role="tab" data-flow="bronze" id="tab-bronze" aria-controls="panel-bronze" aria-selected="false">
+          <span class="flow-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5z"/><path d="M3 8.5 12 13l9-4.5M12 13v7"/></svg><span class="flow-title">Bronze</span></span>
+          <span class="flow-count" data-fig="bronze.total">4,029 rows</span>
+          <span class="flow-what">Raw, exactly as it arrived</span></button>
+        <div class="flow-arrow" aria-hidden="true"><svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12h15m0 0-5.5-5.5M19 12l-5.5 5.5"/></svg></div>
+        <button class="flow-node anim" type="button" role="tab" data-flow="silver" id="tab-silver" aria-controls="panel-silver" aria-selected="false">
+          <span class="flow-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.7 9l5.5 1.7-5.5 1.7L12 18l-1.7-5.6L4.8 10.7 10.3 9z"/><path d="M18.5 4v3M20 5.5h-3"/></svg><span class="flow-title">Silver</span></span>
+          <span class="flow-count" data-fig="silver.total">1,309 rows</span>
+          <span class="flow-what">Cleaned and checked</span></button>
+        <div class="flow-arrow" aria-hidden="true"><svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12h15m0 0-5.5-5.5M19 12l-5.5 5.5"/></svg></div>
+        <button class="flow-node anim" type="button" role="tab" data-flow="gold" id="tab-gold" aria-controls="panel-gold" aria-selected="false">
+          <span class="flow-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="14" r="5"/><path d="M9 9.3 7 3h10l-2 6.3M12 12v4M10.4 13.6h3.2"/></svg><span class="flow-title">Gold</span></span>
+          <span class="flow-count">dbt views</span>
+          <span class="flow-what">Summarised for reading</span></button>
+      </div>
+      <div class="flow-audit">
+        <p class="flow-branch">Branches off the Bronze&nbsp;&rarr;&nbsp;Silver check. Nothing from Gold reaches here.</p>
+        <div class="flow-arrow" aria-hidden="true"><svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 4v7a4 4 0 0 0 4 4h8m0 0-4-4m4 4-4 4"/></svg></div>
+        <button class="flow-node anim" type="button" role="tab" data-flow="audit" id="tab-audit" aria-controls="panel-audit" aria-selected="false">
+          <span class="flow-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V3.8A.8.8 0 0 1 9.8 3h4.4a.8.8 0 0 1 .8.8V5M8.5 11h7M8.5 15h4"/></svg><span class="flow-title">Audit</span></span>
+          <span class="flow-count" data-fig="audit.summary">465 quarantined · 10 runs</span>
+          <span class="flow-what">Rejected on the way, with reasons</span></button>
+      </div>
+      <p class="flow-caption">Data only moves one way through these layers, and only if it passes.</p>
+    </div>
+    <div class="layers">
+
+      <div><div class="layer-panel" role="tabpanel" id="panel-bronze" aria-labelledby="tab-bronze"><p>Nothing is cleaned, corrected or dropped here. If the source sent something broken, broken is what gets stored, so you can always go back and see what really came in.</p><ul class="table-list"><li><code>bronze.raw_products</code><span class="pill" data-fig="bronze.raw_products">900 rows</span><span class="table-note">Whole product record as JSON, plus the file it came from</span></li><li><code>bronze.raw_prices</code><span class="pill" data-fig="bronze.raw_prices">3,129 rows</span><span class="table-note">One row per price line in the CSV, stored verbatim</span></li></ul></div><div class="layer-panel" role="tabpanel" id="panel-silver" aria-labelledby="tab-silver" hidden><p>Only records that passed every check land here. Names are trimmed, numbers are real numbers, and a price cannot exist for a product that isn't in the products table.</p><ul class="table-list"><li><code>silver.products</code><span class="pill" data-fig="silver.products">97 rows</span><span class="table-note">One row per barcode</span></li><li><code>silver.prices</code><span class="pill" data-fig="silver.prices">1,207 rows</span><span class="table-note">One row per price event, keyed by event ID</span></li><li><code>silver.stores</code><span class="pill" data-fig="silver.stores">5 rows</span><span class="table-note">The five fictional supermarkets</span></li></ul></div><div class="layer-panel" role="tabpanel" id="panel-gold" aria-labelledby="tab-gold" hidden><p>Aggregates built for people and dashboards rather than for storage. Built by dbt, so the definition of a metric lives in version control instead of in someone's saved query.</p><ul class="table-list"><li><code>daily_price_summary</code><span class="pill">dbt view</span><span class="table-note">Per day, per product: average, minimum and maximum price across stores</span></li></ul></div><div class="layer-panel" role="tabpanel" id="panel-audit" aria-labelledby="tab-audit" hidden><p>Every run, every rejected record and every validation verdict. This is what turns “the pipeline ran” into “here is exactly what it did and what it threw away”.</p><ul class="table-list"><li><code>audit.pipeline_runs</code><span class="pill" data-fig="audit.runs">10 runs</span><span class="table-note">Start, finish, status, counts, error message</span></li><li><code>audit.quarantine</code><span class="pill" data-fig="audit.quarantine">465 rows</span><span class="table-note">Rejected records with the reason they failed</span></li><li><code>audit.ai_validation_results</code><span class="pill">verdict log</span><span class="table-note">Pass/reject, confidence and reasons per product</span></li></ul></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="ac-teal">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">03</span>
+      <div><h2>The pipeline, stage by stage</h2>
+      <p class="sec-sub">Ten stages, in the order you would run them on a fresh machine. The first eight
+      are the warehouse route; the last two are the streaming one, and are optional.</p></div>
+    </div>
+    <div class="stages"><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg></span><span class="stage-n">01</span></div><div class="stage-body"><h3>Set up the warehouse</h3><p>One Postgres database holds all four layers, each in its own schema. Metabase runs next to it for the dashboards.</p><div class="cmd"><pre><code>docker compose up -d</code></pre><button class="copy" type="button" data-copy="docker compose up -d"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><span>Copy</span></button></div><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>The schema files only run once</strong> <code>sql/</code> is mounted into the container's init directory, which Postgres executes <strong>only when the data volume is empty</strong>. Editing <code>sql/001_create_database.sql</code> does nothing to a database that already exists. Apply the change by hand or recreate the volume.</li><li><strong>Indexes are manual</strong> <code>sql/indexes.sql</code> has no number prefix, so it never runs automatically. See <code>docs/query-performance.md</code> for the before/after measurement.</li></ul></details></div></article><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span><span class="stage-n">02</span></div><div class="stage-body"><h3>Fetch the products</h3><p>A sample of beverages is pulled from Open Food Facts, a real public food database, and written to a timestamped file. Nothing is cleaned yet.</p><div class="cmd"><pre><code>python3 ingestion/extract_products.py</code></pre><button class="copy" type="button" data-copy="python3 ingestion/extract_products.py"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><span>Copy</span></button></div><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>Files are the handoff</strong> Each script writes <code>data/bronze/&hellip;/&lt;name&gt;_&lt;timestamp&gt;.json|csv</code> and the next stage finds its input with <code>find_latest_file()</code>, literally <code>sorted(glob)[-1]</code>. The timestamp in the filename is load-bearing; rename a file and the pipeline picks up the wrong one.</li></ul></details></div></article><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 11.2V5.4a1.9 1.9 0 0 1 1.9-1.9h5.8a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.8l-5.4 5.4a2 2 0 0 1-2.8 0l-7-7a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.4"/></svg></span><span class="stage-n">03</span></div><div class="stage-body"><h3>Invent the prices</h3><p>Open Food Facts has no prices, so the platform generates them for five fictional New Zealand supermarkets, and deliberately corrupts a slice of them.</p><div class="cmd"><pre><code>python3 ingestion/generate_prices.py</code></pre><button class="copy" type="button" data-copy="python3 ingestion/generate_prices.py"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><span>Copy</span></button></div><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>The bad data is on purpose</strong> <code>generate_prices.py</code> injects four faults, each at roughly 2%: a negative price, an empty price, an unknown store, and a barcode that matches no product. Without them the quarantine path would never run and the data-quality dashboard would be an empty page.</li><li><strong>Every row shares one timestamp</strong> The generator stamps <code>datetime.now()</code> per row inside a loop that finishes in milliseconds, so an entire run occupies a single instant. That is why nothing here shows price movement over time.</li></ul></details></div></article><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16l-6.3 7.4v5.3L10.3 20v-7.6z"/></svg></span><span class="stage-n">04</span></div><div class="stage-body"><h3>Clean, check and load</h3><p>The one job that does the real work: read the raw files, judge every record, load what passes into silver and file what fails into quarantine with a reason.</p><div class="cmd"><pre><code>python3 -m processing.run_pipeline</code></pre><button class="copy" type="button" data-copy="python3 -m processing.run_pipeline"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><span>Copy</span></button></div><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>Run it as a module, not a path</strong> It imports <code>quality.semantic_validation</code>, so <code>python3 processing/run_pipeline.py</code> fails on the import. The <code>-m</code> form is required.</li><li><strong>A run is always accounted for</strong> The run row is written as <code>RUNNING</code> on its own connection and committed immediately, so a crash still leaves a visible record. The whole body is wrapped so a run ends as either <code>SUCCESS</code> with counts or <code>FAILED</code> with the error message.</li><li><strong>Rejecting a product removes its prices</strong> If a product fails, any prices already loaded against its barcode are deleted first, then the product (foreign keys make the order mandatory), and the original record is quarantined.</li></ul></details></div></article><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 5 6v5.6c0 4 2.9 7.7 7 8.9 4.1-1.2 7-4.9 7-8.9V6z"/><path d="m9.2 12.2 2 2 3.7-4"/></svg></span><span class="stage-n">05</span></div><div class="stage-body"><h3>Check it four ways</h3><p>Validation is layered rather than a single gate, so a structural problem and a nonsense product name are caught by different things.</p><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>What actually runs</strong> Deterministic rules in <code>quality/semantic_validation.py</code> run inside the pipeline and are authoritative. An optional local LLM review runs on top only when <code>OLLAMA_SEMANTIC_VALIDATION</code> is set, and it can never overturn a deterministic reject. dbt tests check the warehouse output after the fact.</li><li><strong>What does not run yet</strong> The Great Expectations suites in <code>quality/product_expectations.py</code> and <code>quality/price_expectations.py</code> are written but have no <code>__main__</code> block and no caller, so nothing invokes them. <code>quality/quality_rules.yml</code> is a written catalogue of those expectations, not executed configuration. Both are honest gaps, not hidden ones.</li></ul></details></div></article><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 3 8.5 4.4L12 11.8 3.5 7.4z"/><path d="m3.5 12 8.5 4.4 8.5-4.4M3.5 16.6 12 21l8.5-4.4"/></svg></span><span class="stage-n">06</span></div><div class="stage-body"><h3>Model it with dbt</h3><p>SQL transformations that live in version control and carry their own tests, instead of a query someone saved in a BI tool.</p><div class="cmd"><pre><code>cd grocery_dbt &amp;&amp; dbt run &amp;&amp; dbt test</code></pre><button class="copy" type="button" data-copy="cd grocery_dbt &amp;&amp; dbt run &amp;&amp; dbt test"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><span>Copy</span></button></div><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>It reads silver as a source</strong> <code>daily_price_summary</code> goes through <code>sources.yml</code> rather than <code>ref()</code>, because the silver tables are loaded by Python, not built by dbt. The connection profile lives outside the repo in <code>~/.dbt/profiles.yml</code>.</li></ul></details></div></article><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 2"/></svg></span><span class="stage-n">07</span></div><div class="stage-body"><h3>Schedule it</h3><p>Airflow runs the same three commands once a day, in order, with retries. It is the manual walkthrough above, automated.</p><div class="cmd"><pre><code>cd airflow_local &amp;&amp; docker compose up airflow-init &amp;&amp; docker compose up -d</code></pre><button class="copy" type="button" data-copy="cd airflow_local &amp;&amp; docker compose up airflow-init &amp;&amp; docker compose up -d"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><span>Copy</span></button></div><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>A second Compose project</strong> Airflow is not a service in the root <code>compose.yaml</code>; it is its own stack in <code>airflow_local/</code>, on <code>localhost:8080</code>. It reaches the warehouse over <code>host.docker.internal</code> and expects the repo mounted at <code>/opt/smart-grocery</code>.</li><li><strong>The DAG is the same three steps</strong> <code>extract_products → generate_prices → clean_validate_and_load</code>, daily, two retries, no catch-up. Note that <code>DATABASE_URL</code> is hardcoded in the DAG file rather than read from <code>.env</code>.</li></ul></details></div></article><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20V4M4 20h16"/><path d="M8.5 20v-6M13 20V8.5M17.5 20v-9"/></svg></span><span class="stage-n">08</span></div><div class="stage-body"><h3>Read it</h3><p>Two Metabase dashboard tabs over the same warehouse: one for whether the pipeline is healthy, one for what the prices say.</p><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>SQL lives in the repo</strong> Metabase stores its own cards in its own volume, which is not in git. <code>dashboard/metabase_queries.sql</code> is the source of truth for every query and names the chart type each card should use.</li></ul></details></div></article><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13 3 5.5 13.4h5L11 21l7.5-10.4h-5z"/></svg></span><span class="stage-n">09</span></div><div class="stage-body"><h3>Stream the same prices</h3><p>Everything above waits for a whole file, then processes it in one go. This route does the opposite: price events are written one small file at a time, and Spark picks each one up as it lands, appending to <strong>Delta tables</strong> &mdash; ordinary files on disk that keep a running log of every change, so a reader always sees a complete version rather than a half-written one.</p><div class="cmd"><pre><code>python3 processing/streaming_prices.py --once</code></pre><button class="copy" type="button" data-copy="python3 processing/streaming_prices.py --once"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><span>Copy</span></button></div><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>It needs Java, and it is the only stage that does</strong> This is real Spark, running <code>local[2]</code>. <code>--once</code> swaps every trigger to <code>availableNow</code>, so it drains whatever is already in <code>data/stream/incoming</code> and exits instead of running forever.</li><li><strong>Three queries, three checkpoints</strong> One <code>readStream</code> feeds a Delta append of valid rows, a JSON quarantine of invalid ones, and a <code>complete</code>-mode latest-price aggregate, each with its own directory under <code>data/stream/checkpoints</code>. Deleting one checkpoint and not the others makes the outputs disagree on replay.</li><li><strong>A ten-minute watermark</strong> The stream will wait up to ten minutes for a late event before it stops accepting events for that period, which is also what bounds the memory used for de-duplicating on <code>event_id</code>.</li><li><strong>The rules are duplicated, not shared</strong> Validation here is a hand-written <code>when</code> chain plus a hardcoded <code>KNOWN_STORES</code> tuple. It does not import <code>quality/semantic_validation.py</code>. The same store list is hardcoded in <strong>five</strong> places: <code>generate_stream_events.py</code>, <code>generate_prices.py</code>, <code>streaming_prices.py</code>, <code>price_expectations.py</code> and <code>tests/test_ingestion.py</code>. A rule change has to be made in every copy.</li></ul></details></div></article><article class="stage anim"><div class="stage-side"><span class="stage-ico"><svg class="ico" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg></span><span class="stage-n">10</span></div><div class="stage-body"><h3>Join the two routes</h3><p>At this point the platform holds the same kind of data in two unrelated places: prices in the database, streamed prices in files. Neither can answer a question about the other. DuckDB opens both at once, which is the only thing that makes this one platform rather than two.</p><div class="cmd"><pre><code>python3 -m serving.lakehouse</code></pre><button class="copy" type="button" data-copy="python3 -m serving.lakehouse"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><span>Copy</span></button></div><details><summary><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><span>Under the hood</span></summary><ul class="hood"><li><strong>Nothing is copied</strong> <code>delta_scan()</code> reads the Delta Parquet files where they already sit, and the warehouse is attached with <code>ATTACH … (TYPE postgres, READ_ONLY)</code>. There is no third copy of the data to keep in sync, and the join cannot write to the warehouse by accident.</li><li><strong>The URL has to be rewritten</strong> <code>postgres_dsn()</code> exists only because DuckDB's postgres extension wants libpq keywords, not the <code>postgresql://</code> URL that the rest of the project reads from <code>.env</code>.</li><li><strong>Run it as a module</strong> <code>python3 -m serving.lakehouse</code>, not the script path. Same for <code>python3 -m processing.inspect_delta</code>, which prints the Delta tables back out.</li><li><strong>The gold tables are a snapshot, the views are live</strong> <code>lake_price_events</code> and <code>lake_latest_price</code> are views over the Delta files and always reflect the latest stream output; the three <code>gold_*</code> tables are materialised at run time. Re-run this stage after any streaming run or the two will disagree.</li></ul></details></div></article></div>
+  </div>
+</section>
+
+<section class="ac-indigo">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">04</span>
+      <div><h2>Follow one record</h2>
+      <p class="sec-sub">The clearest way to understand the layers is to watch a single record move
+      through them. These are two real records: one that made it, one that didn't.</p></div>
+    </div>
+    <div class="tracks" role="group" aria-label="Choose a record to follow">
+      <button class="track-btn" type="button" data-show="product" aria-pressed="true">A product that passed</button>
+      <button class="track-btn" type="button" data-show="price" aria-pressed="false">A price that failed</button>
+    </div>
+    <div data-track-panel="product"><div class="stepper" data-track="product"><div class="dots"><button class="dot" type="button" data-step="0" aria-label="Step 1: Fetched"></button><button class="dot" type="button" data-step="1" aria-label="Step 2: Stored raw"></button><button class="dot" type="button" data-step="2" aria-label="Step 3: Checked"></button><button class="dot" type="button" data-step="3" aria-label="Step 4: Cleaned"></button><button class="dot" type="button" data-step="4" aria-label="Step 5: Loaded"></button></div><ul class="steps"><li class="step" data-tone="neutral"><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5z"/><path d="M3 8.5 12 13l9-4.5M12 13v7"/></svg><div><span class="step-n">Step 1 of 5</span><h4>Fetched</h4></div></div><p>Open Food Facts returns the product as JSON, dozens of fields, some empty.</p><pre class="scroll"><code>{
+  &quot;code&quot;: &quot;3124480186560&quot;,
+  &quot;product_name&quot;: &quot;33CL CAN SLIM TROPICAL&quot;,
+  &quot;brands&quot;: &quot;Oasis&quot;,
+  &quot;nutriments&quot;: { &quot;energy-kcal_100g&quot;: 287 },
+  &quot;categories_tags&quot;: [&quot;en:beverages…&quot;]
+}</code></pre></li><li class="step" data-tone="neutral" hidden><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5z"/><path d="M3 8.5 12 13l9-4.5M12 13v7"/></svg><div><span class="step-n">Step 2 of 5</span><h4>Stored raw</h4></div></div><p>Written to <code>bronze.raw_products</code> exactly as received, with the filename it came from. Nothing is judged yet.</p><pre class="scroll"><code>INSERT INTO bronze.raw_products (source_file, payload)
+VALUES (&#x27;products_20260806T…json&#x27;, &#x27;{…}&#x27;::jsonb);</code></pre></li><li class="step" data-tone="good" hidden><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><div><span class="step-n">Step 3 of 5</span><h4>Checked</h4></div></div><p>Deterministic rules ask: is there a barcode? a name? is the name just the barcode repeated back? This one passes.</p><pre class="scroll"><code>ValidationResult(
+  status=&quot;pass&quot;,
+  confidence=0.95,
+  reasons=[],
+  validator=&quot;deterministic-semantic-rules&quot;
+)</code></pre></li><li class="step" data-tone="good" hidden><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><div><span class="step-n">Step 4 of 5</span><h4>Cleaned</h4></div></div><p>Names trimmed and length-capped, numbers coerced to real numbers or <code>None</code>, the first category tag kept.</p><pre class="scroll"><code>{
+  &quot;barcode&quot;: &quot;3124480186560&quot;,
+  &quot;product_name&quot;: &quot;33CL CAN SLIM TROPICAL&quot;,
+  &quot;brand&quot;: &quot;Oasis&quot;,
+  &quot;energy_kcal_100g&quot;: 287.0
+}</code></pre></li><li class="step" data-tone="good" hidden><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/></svg><div><span class="step-n">Step 5 of 5</span><h4>Loaded</h4></div></div><p>Upserted into <code>silver.products</code>. Running the pipeline again updates this row rather than duplicating it.</p><pre class="scroll"><code>INSERT INTO silver.products (…) VALUES (…)
+ON CONFLICT (barcode) DO UPDATE SET …</code></pre></li></ul><div class="stepper-controls"><button class="btn" type="button" data-move="-1">Back</button><button class="btn btn-primary" type="button" data-move="1"><span>Next step</span><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12h15m0 0-5.5-5.5M19 12l-5.5 5.5"/></svg></button></div></div></div>
+    <div data-track-panel="price" hidden><div class="stepper" data-track="price"><div class="dots"><button class="dot" type="button" data-step="0" aria-label="Step 1: Generated"></button><button class="dot" type="button" data-step="1" aria-label="Step 2: Stored raw"></button><button class="dot" type="button" data-step="2" aria-label="Step 3: Checked"></button><button class="dot" type="button" data-step="3" aria-label="Step 4: Quarantined"></button><button class="dot" type="button" data-step="4" aria-label="Step 5: Counted"></button></div><ul class="steps"><li class="step" data-tone="bad"><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m9.4 9.4 5.2 5.2M14.6 9.4l-5.2 5.2"/></svg><div><span class="step-n">Step 1 of 5</span><h4>Generated</h4></div></div><p>The price generator rolls a 2% chance and deliberately writes a negative price for this row.</p><pre class="scroll"><code>{
+  &quot;event_id&quot;: &quot;11f7bd42-9f43-4d86-bd33-384d740c6954&quot;,
+  &quot;barcode&quot;: &quot;6111035000058&quot;,
+  &quot;store_id&quot;: &quot;auckland_01&quot;,
+  &quot;price&quot;: &quot;-1&quot;,
+  &quot;promotion&quot;: true
+}</code></pre></li><li class="step" data-tone="neutral" hidden><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5z"/><path d="M3 8.5 12 13l9-4.5M12 13v7"/></svg><div><span class="step-n">Step 2 of 5</span><h4>Stored raw</h4></div></div><p>Bronze takes it anyway. A broken record is still a fact about what arrived.</p><pre class="scroll"><code>INSERT INTO bronze.raw_prices (source_file, payload)
+VALUES (&#x27;prices_20260806T…csv&#x27;, &#x27;{…}&#x27;::jsonb);</code></pre></li><li class="step" data-tone="bad" hidden><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m9.4 9.4 5.2 5.2M14.6 9.4l-5.2 5.2"/></svg><div><span class="step-n">Step 3 of 5</span><h4>Checked</h4></div></div><p>Price checks run in order: is it a number? is it above zero? below the sanity ceiling? This one fails the second test.</p><pre class="scroll"><code>failures = [&quot;Price must be greater than zero&quot;]</code></pre></li><li class="step" data-tone="bad" hidden><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m9.4 9.4 5.2 5.2M14.6 9.4l-5.2 5.2"/></svg><div><span class="step-n">Step 4 of 5</span><h4>Quarantined</h4></div></div><p>It never reaches silver. The record and its reason go to <code>audit.quarantine</code>, tied to this pipeline run.</p><pre class="scroll"><code>INSERT INTO audit.quarantine
+  (pipeline_run_id, dataset_name, failure_reason, raw_record)
+VALUES (…, &#x27;prices&#x27;, &#x27;Price must be greater than zero&#x27;, &#x27;{…}&#x27;);</code></pre></li><li class="step" data-tone="neutral" hidden><div class="step-head"><svg class="ico step-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5z"/><path d="M3 8.5 12 13l9-4.5M12 13v7"/></svg><div><span class="step-n">Step 5 of 5</span><h4>Counted</h4></div></div><p>The run's rejected total goes up by one. Nothing is silently dropped, and every rejection is visible on the data-quality dashboard.</p><pre class="scroll"><code>UPDATE audit.pipeline_runs
+SET rejected_records = 47, status = &#x27;SUCCESS&#x27;
+WHERE pipeline_run_id = …;</code></pre></li></ul><div class="stepper-controls"><button class="btn" type="button" data-move="-1">Back</button><button class="btn btn-primary" type="button" data-move="1"><span>Next step</span><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12h15m0 0-5.5-5.5M19 12l-5.5 5.5"/></svg></button></div></div></div>
+  </div>
+</section>
+
+<section class="ac-clem">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">05</span>
+      <div><h2>Why <span data-fig="quarantine.total">465</span> records were rejected</h2>
+      <p class="sec-sub">A high rejection rate would normally be alarming. Here it is the point: the
+      price generator injects four kinds of fault on purpose, at roughly 2% each, so the quarantine
+      path is exercised on every run.</p></div>
+    </div>
+    <div class="grid2">
+      <div class="panel anim">
+        <div class="panel-head"><svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/></svg><h3>Reasons for rejection</h3></div>
+        <p class="cap">All runs to date. Reasons past the top seven are grouped as “Other”.</p>
+        <ul class="bars" data-fig="quarantine.reasons"><li class="bar" tabindex="0" data-tip="Unknown product barcode: 224"><span class="bar-label">Unknown product barcode</span><span class="bar-track"><span class="bar-fill" data-w="100.0"></span></span><span class="bar-value">224</span></li><li class="bar" tabindex="0" data-tip="Price must be greater than zero: 64"><span class="bar-label">Price must be greater than zero</span><span class="bar-track"><span class="bar-fill" data-w="28.6"></span></span><span class="bar-value">64</span></li><li class="bar" tabindex="0" data-tip="Missing or invalid price: 61"><span class="bar-label">Missing or invalid price</span><span class="bar-track"><span class="bar-fill" data-w="27.2"></span></span><span class="bar-value">61</span></li><li class="bar" tabindex="0" data-tip="Unknown store: 51"><span class="bar-label">Unknown store</span><span class="bar-track"><span class="bar-fill" data-w="22.8"></span></span><span class="bar-value">51</span></li><li class="bar" tabindex="0" data-tip="Other: 37"><span class="bar-label">Other</span><span class="bar-track"><span class="bar-fill" data-w="16.5"></span></span><span class="bar-value">37</span></li><li class="bar" tabindex="0" data-tip="Missing product name: 14"><span class="bar-label">Missing product name</span><span class="bar-track"><span class="bar-fill" data-w="6.2"></span></span><span class="bar-value">14</span></li><li class="bar" tabindex="0" data-tip="Product name contains no descriptive text: 7"><span class="bar-label">Product name contains no descriptive text</span><span class="bar-track"><span class="bar-fill" data-w="3.1"></span></span><span class="bar-value">7</span></li><li class="bar" tabindex="0" data-tip="Product name is identical to barcode; Product name contains no descriptive text: 7"><span class="bar-label">Product name is identical to barcode; Product name contains no descriptive text</span><span class="bar-track"><span class="bar-fill" data-w="3.1"></span></span><span class="bar-value">7</span></li></ul>
+      </div>
+      <div class="panel anim">
+        <div class="panel-head"><svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><h3>Which dataset fails</h3></div>
+        <p class="cap">Prices fail far more often than products.</p>
+        <ul class="bars" data-fig="quarantine.datasets"><li class="bar" tabindex="0" data-tip="Prices: 413"><span class="bar-label">Prices</span><span class="bar-track"><span class="bar-fill" data-w="100.0"></span></span><span class="bar-value">413</span></li><li class="bar" tabindex="0" data-tip="Products: 52"><span class="bar-label">Products</span><span class="bar-track"><span class="bar-fill" data-w="12.6"></span></span><span class="bar-value">52</span></li></ul>
+        <p class="cap" style="margin:18px 0 0">Most price failures are a barcode that never made it
+        into <code>silver.products</code>, because a rejected product takes its prices down with it.</p>
+      </div>
+    </div>
+    <div class="panel anim">
+      <div class="panel-head"><svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20V4M4 20h16"/><path d="M8.5 20v-6M13 20V8.5M17.5 20v-9"/></svg><h3>Every run, loaded versus quarantined</h3></div>
+      <p class="cap"><span data-fig="runs.count">10</span> runs. The hatched column is a run that processed no records at all.</p>
+      <ul class="cols" data-fig="runs.timeline"><li class="col" tabindex="0" data-tip="05 Aug 12:26 · 415 loaded · 34 quarantined"><span class="col-stack"><span class="seg seg-b" data-h="7.6"></span><span class="seg seg-a" data-h="92.2"></span></span><span class="col-tick">12:26</span></li><li class="col" tabindex="0" data-tip="05 Aug 13:33 · 411 loaded · 38 quarantined"><span class="col-stack"><span class="seg seg-b" data-h="8.4"></span><span class="seg seg-a" data-h="91.3"></span></span><span class="col-tick">13:33</span></li><li class="col" tabindex="0" data-tip="05 Aug 13:47 · 395 loaded · 54 quarantined"><span class="col-stack"><span class="seg seg-b" data-h="12.0"></span><span class="seg seg-a" data-h="87.8"></span></span><span class="col-tick">13:47</span></li><li class="col" tabindex="0" data-tip="05 Aug 13:57 · 375 loaded · 74 quarantined"><span class="col-stack"><span class="seg seg-b" data-h="16.4"></span><span class="seg seg-a" data-h="83.3"></span></span><span class="col-tick">13:57</span></li><li class="col" tabindex="0" data-tip="05 Aug 14:06 · 377 loaded · 72 quarantined"><span class="col-stack"><span class="seg seg-b" data-h="16.0"></span><span class="seg seg-a" data-h="83.8"></span></span><span class="col-tick">14:06</span></li><li class="col" data-empty="true" tabindex="0" data-tip="05 Aug 14:31 · no records"><span class="col-stack"><span class="seg seg-b" data-h="0.0"></span><span class="seg seg-a" data-h="0.0"></span></span><span class="col-tick">14:31</span></li><li class="col" tabindex="0" data-tip="05 Aug 14:42 · 409 loaded · 40 quarantined"><span class="col-stack"><span class="seg seg-b" data-h="8.9"></span><span class="seg seg-a" data-h="90.9"></span></span><span class="col-tick">14:42</span></li><li class="col" tabindex="0" data-tip="06 Aug 01:52 · 397 loaded · 47 quarantined"><span class="col-stack"><span class="seg seg-b" data-h="10.4"></span><span class="seg seg-a" data-h="88.2"></span></span><span class="col-tick">01:52</span></li><li class="col" tabindex="0" data-tip="06 Aug 02:34 · 396 loaded · 54 quarantined"><span class="col-stack"><span class="seg seg-b" data-h="12.0"></span><span class="seg seg-a" data-h="88.0"></span></span><span class="col-tick">02:34</span></li><li class="col" tabindex="0" data-tip="07 Aug 00:15 · 389 loaded · 52 quarantined"><span class="col-stack"><span class="seg seg-b" data-h="11.6"></span><span class="seg seg-a" data-h="86.4"></span></span><span class="col-tick">00:15</span></li></ul>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--s1)"></i>Loaded into silver</span>
+        <span><i class="swatch" style="background:var(--s2)"></i>Quarantined</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ac-indigo">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">06</span>
+      <div><h2>What the prices say</h2>
+      <p class="sec-sub">The second dashboard tab. Everything here is cross-sectional, a single moment
+      in time, for the reason given under stage 03.</p></div>
+    </div>
+    <div class="panel anim">
+      <div class="panel-head"><svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 11.2V5.4a1.9 1.9 0 0 1 1.9-1.9h5.8a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.8l-5.4 5.4a2 2 0 0 1-2.8 0l-7-7a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.4"/></svg><h3>How prices are distributed</h3></div>
+      <p class="cap"><span data-fig="silver.prices.count">1,207</span> price records in ten bands. The axis shows the lower bound of each band.</p>
+      <ul class="cols cols-tight" data-fig="price.histogram"><li class="col" tabindex="0" data-tip="1.4+ · 152 price records"><span class="col-stack"><span class="seg seg-a" data-h="93.3"></span></span><span class="col-tick">1.4</span></li><li class="col" tabindex="0" data-tip="3.6+ · 112 price records"><span class="col-stack"><span class="seg seg-a" data-h="68.7"></span></span><span class="col-tick">3.6</span></li><li class="col" tabindex="0" data-tip="5.8+ · 163 price records"><span class="col-stack"><span class="seg seg-a" data-h="100.0"></span></span><span class="col-tick">5.8</span></li><li class="col" tabindex="0" data-tip="8.0+ · 144 price records"><span class="col-stack"><span class="seg seg-a" data-h="88.3"></span></span><span class="col-tick">8.0</span></li><li class="col" tabindex="0" data-tip="10.2+ · 145 price records"><span class="col-stack"><span class="seg seg-a" data-h="89.0"></span></span><span class="col-tick">10.2</span></li><li class="col" tabindex="0" data-tip="12.4+ · 147 price records"><span class="col-stack"><span class="seg seg-a" data-h="90.2"></span></span><span class="col-tick">12.4</span></li><li class="col" tabindex="0" data-tip="14.6+ · 147 price records"><span class="col-stack"><span class="seg seg-a" data-h="90.2"></span></span><span class="col-tick">14.6</span></li><li class="col" tabindex="0" data-tip="16.8+ · 108 price records"><span class="col-stack"><span class="seg seg-a" data-h="66.3"></span></span><span class="col-tick">16.8</span></li><li class="col" tabindex="0" data-tip="19.0+ · 59 price records"><span class="col-stack"><span class="seg seg-a" data-h="36.2"></span></span><span class="col-tick">19.0</span></li><li class="col" tabindex="0" data-tip="21.2+ · 29 price records"><span class="col-stack"><span class="seg seg-a" data-h="17.8"></span></span><span class="col-tick">21.2</span></li><li class="col" tabindex="0" data-tip="23.4+ · 1 price records"><span class="col-stack"><span class="seg seg-a" data-h="0.6"></span></span><span class="col-tick">23.4</span></li></ul>
+    </div>
+    <div class="grid2">
+      <div class="panel anim">
+        <div class="panel-head"><svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 9h16l-1.5 9.2a2 2 0 0 1-2 1.8H7.5a2 2 0 0 1-2-1.8z"/><path d="m8.5 9 2.2-5M15.5 9l-2.2-5M9.5 13v3M14.5 13v3"/></svg><h3>Where shopping around pays</h3></div>
+        <p class="cap">Same product, cheapest versus dearest store.</p>
+        <div class="scroll"><table><thead><tr><th class="a-l">Product</th><th class="a-r">Low</th><th class="a-r">High</th><th class="a-r">Save</th></tr></thead><tbody><tr><td class="a-l">Aïn Ifran Eau minérale naturelle</td><td class="a-r">1.58</td><td class="a-r">22.89</td><td class="a-r">93%</td></tr><tr><td class="a-l">Coca Cola</td><td class="a-r">5.35</td><td class="a-r">23.42</td><td class="a-r">77%</td></tr><tr><td class="a-l">AQUAFINA</td><td class="a-r">3.28</td><td class="a-r">21.24</td><td class="a-r">85%</td></tr><tr><td class="a-l">Eau minéral naturelle</td><td class="a-r">5.21</td><td class="a-r">21.78</td><td class="a-r">76%</td></tr><tr><td class="a-l">Cappy PULPY</td><td class="a-r">5.99</td><td class="a-r">22.35</td><td class="a-r">73%</td></tr><tr><td class="a-l">اكوافينا</td><td class="a-r">2.40</td><td class="a-r">18.69</td><td class="a-r">87%</td></tr></tbody></table></div>
+      </div>
+      <div class="panel anim">
+        <div class="panel-head"><svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg><h3>Average price by store</h3></div>
+        <p class="cap">Near-identical by construction. See the limitations below.</p>
+        <div class="scroll"><table><thead><tr><th class="a-l">Store</th><th class="a-r">Average</th><th class="a-r">Records</th></tr></thead><tbody data-fig="stores.table"><tr><td class="a-l">Southern Grocery (Christchurch)</td><td class="a-r">11.08</td><td class="a-r">234</td></tr><tr><td class="a-l">Fresh Market Hamilton (Hamilton)</td><td class="a-r">10.83</td><td class="a-r">240</td></tr><tr><td class="a-l">Value Foods Hamilton (Hamilton)</td><td class="a-r">10.80</td><td class="a-r">251</td></tr><tr><td class="a-l">Fresh Market Auckland (Auckland)</td><td class="a-r">10.62</td><td class="a-r">250</td></tr><tr><td class="a-l">Value Foods Wellington (Wellington)</td><td class="a-r">10.59</td><td class="a-r">232</td></tr></tbody></table></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ac-plum">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">07</span>
+      <div><h2>Where the two routes disagree</h2>
+      <p class="sec-sub">The same 97 products were priced twice, once down each route. Ninety-four of
+      them ended up in both. Asking what those two records say about the same product is the one
+      question neither route can answer alone, and it is the reason the DuckDB stage exists.</p></div>
+    </div>
+    <figure class="figure">
+      <p class="figure-hint">Scroll the diagram sideways to see the whole flow.</p>
+      <div class="figure-scroll"><svg class="diagram" viewBox="-6 -14 1360 430" role="img" aria-label="The second route, in three steps. First, price events are written one small file at a time into a folder that stands in for a message queue. Second, Spark Structured Streaming watches that folder and appends to Delta tables on disk, keeping a latest-price table alongside, using a fixed schema, a ten-minute watermark and its own copy of the validation rules. Third, DuckDB reads those Delta files where they sit and at the same time attaches the PostgreSQL warehouse read-only, taking product and store names from the silver layer, so a single query can compare what both routes recorded for the same product. The Delta files live outside the database."><defs>
+  <marker id="arrow-stream" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6.2" markerHeight="6.2" orient="auto">
+    <path d="M0 1.2 L9 5 L0 8.8 z" class="mk-stream"/></marker>
+</defs><g class="dg-item dg-events" data-delay="0"><rect class="dg-band" x="40" y="0" width="950" height="96" rx="13"/><rect class="dg-plate" x="84" y="22" width="52" height="52" rx="13"/><g class="dg-ico" transform="translate(97 35) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></g><text class="dg-t" x="152" y="34">Price events</text><text class="dg-s" x="152" y="53">One tiny file per event,</text><text class="dg-s" x="152" y="68">dropped into a folder as they happen.</text><rect class="dg-chip" x="420" y="32" width="150" height="32" rx="8"/><text class="dg-chip-t" x="495" y="52" text-anchor="middle">stream/incoming/</text><circle class="dg-dot" cx="700" cy="27" r="2.3"/><text class="dg-b" x="711" y="31">Same products, priced independently</text><circle class="dg-dot" cx="700" cy="44" r="2.3"/><text class="dg-b" x="711" y="48">A folder standing in for a message queue</text><circle class="dg-dot" cx="700" cy="61" r="2.3"/><text class="dg-b" x="711" y="65">No faults injected here</text></g><polyline class="dg-arrow dg-stream" points="515,96 515,124" marker-end="url(#arrow-stream)"/><text class="dg-e dg-stream" x="527" y="114" text-anchor="start">one file at a time</text><g class="dg-item dg-spark" data-delay="1"><rect class="dg-band" x="40" y="128" width="950" height="112" rx="13"/><rect class="dg-plate" x="84" y="158" width="52" height="52" rx="13"/><g class="dg-ico" transform="translate(97 171) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3 5.5 13.4h5L11 21l7.5-10.4h-5z"/></g><text class="dg-t" x="152" y="162">Spark Structured Streaming</text><text class="dg-s" x="152" y="181">Watches the folder as files land,</text><text class="dg-s" x="152" y="196">writing to Delta tables on disk</text><text class="dg-s" x="152" y="211">rather than into the database.</text><rect class="dg-chip" x="420" y="160" width="106" height="32" rx="8"/><text class="dg-chip-t" x="473" y="180" text-anchor="middle">delta_prices</text><rect class="dg-chip" x="535" y="160" width="112" height="32" rx="8"/><text class="dg-chip-t" x="591" y="180" text-anchor="middle">latest_prices</text><circle class="dg-dot" cx="700" cy="154" r="2.3"/><text class="dg-b" x="711" y="158">Fixed schema, ten-minute watermark</text><circle class="dg-dot" cx="700" cy="172" r="2.3"/><text class="dg-b" x="711" y="176">Repeat event IDs dropped</text><circle class="dg-dot" cx="700" cy="188" r="2.3"/><text class="dg-b" x="711" y="192">Three queries, three checkpoints</text><circle class="dg-dot" cx="700" cy="206" r="2.3"/><text class="dg-b" x="711" y="210">Its own copy of the rules</text><circle class="dg-stepdot" cx="62" cy="184" r="13"/><text class="dg-stepn" x="62" y="188" text-anchor="middle">9</text></g><polyline class="dg-arrow dg-stream" points="515,240 515,268" marker-end="url(#arrow-stream)"/><text class="dg-e dg-stream" x="527" y="258" text-anchor="start">Delta files, read in place</text><g class="dg-item dg-lake" data-delay="2"><rect class="dg-band" x="40" y="272" width="950" height="112" rx="13"/><rect class="dg-plate" x="84" y="302" width="52" height="52" rx="13"/><g class="dg-ico" transform="translate(97 315) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></g><text class="dg-t" x="152" y="306">DuckDB lakehouse</text><text class="dg-s" x="152" y="325">Reads the Delta files where they sit</text><text class="dg-s" x="152" y="340">and attaches the warehouse too,</text><text class="dg-s" x="152" y="355">so one query can span both routes.</text><rect class="dg-chip" x="420" y="304" width="188" height="32" rx="8"/><text class="dg-chip-t" x="514" y="324" text-anchor="middle">gold_stream_versus_batch</text><circle class="dg-dot" cx="700" cy="298" r="2.3"/><text class="dg-b" x="711" y="302">Nothing is copied or re-loaded</text><circle class="dg-dot" cx="700" cy="316" r="2.3"/><text class="dg-b" x="711" y="320">Three models, each needing both routes</text><circle class="dg-dot" cx="700" cy="332" r="2.3"/><text class="dg-b" x="711" y="336">Written to data/gold/lakehouse.duckdb</text><circle class="dg-stepdot" cx="62" cy="328" r="13"/><text class="dg-stepn" x="62" y="332" text-anchor="middle">10</text></g><g class="dg-item dg-silver" data-delay="3"><path class="dg-band" d="M1076,279 A139,7 0 0 1 1354,279 V377 A139,7 0 0 1 1076,377 Z"/><path class="dg-rim" d="M1076,279 A139,7 0 0 0 1354,279"/><rect class="dg-plate" x="1100" y="302" width="52" height="52" rx="13"/><g class="dg-ico" transform="translate(1113 315) scale(1.083)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></g><text class="dg-t" x="1168" y="306">The warehouse</text><text class="dg-s" x="1168" y="325">Attached read-only.</text><text class="dg-s" x="1168" y="340">Supplies the product and</text><text class="dg-s" x="1168" y="355">store names the events lack.</text></g><polyline class="dg-arrow dg-stream dg-dash" points="1076,328 998,328" marker-end="url(#arrow-stream)"/><text class="dg-e dg-stream" x="1037" y="318" text-anchor="middle">joins</text><g class="dg-item dg-outside" data-delay="4"><path class="dg-brace" d="M28 128 h-12 v112 h12"/><text class="dg-vault-t" x="10" y="184" text-anchor="middle" transform="rotate(-90 10 184)">Delta files on disk</text></g></svg></div>
+      <figcaption>Nothing in this route touches the four database layers until the last box, and even
+      there the warehouse is opened read-only. The Delta files and the database each hold a version of
+      the same prices; the table below is what happens when you finally ask them the same question.</figcaption>
+    </figure>
+    <div class="cards">
+      <div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13 3 5.5 13.4h5L11 21l7.5-10.4h-5z"/></svg><h3>305 events streamed</h3></div><p>Across 97 products and all five stores, reduced to 208 latest-price rows &mdash; one per product and store, kept current as events arrive.</p></div>
+      <div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20V4M4 20h16"/><path d="M8.5 20v-6M13 20V8.5M17.5 20v-9"/></svg><h3>They differ by $3.16</h3></div><p>Median gap between the two routes' average price for the same product. Only 13 of the 94 land within a dollar of each other, and 73 come out cheaper on the streaming side.</p></div>
+      <div class="mini anim" data-tone="warn"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/></svg><h3>And it is not a bug</h3></div><p>The two generators simply draw from different ranges: the batch one averages $10.51, the streaming one $8.10. The gap is invented, but the query that exposes it would find a real one the same way.</p></div>
+    </div>
+    <div class="panel anim">
+      <div class="panel-head"><svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20V4M4 20h16"/><path d="M8.5 20v-6M13 20V8.5M17.5 20v-9"/></svg><h3>The five widest disagreements</h3></div>
+      <p class="cap">Average price per product down each route. Two of these five rows are the same
+      drink under two barcodes, spelled differently &mdash; a real property of open product data, and a
+      reason the platform keys on barcode rather than on name.</p>
+      <div class="scroll"><table><thead><tr><th class="a-l">Product</th><th class="a-r">Streamed</th><th class="a-r">Batch</th><th class="a-r">Difference</th></tr></thead><tbody><tr><td class="a-l">K&eacute;fir Nature</td><td class="a-r">3.15</td><td class="a-r">15.24</td><td class="a-r">&minus;12.09</td></tr><tr><td class="a-l">Coca Cola</td><td class="a-r">4.22</td><td class="a-r">15.16</td><td class="a-r">&minus;10.94</td></tr><tr><td class="a-l">k&eacute;fir nature</td><td class="a-r">7.44</td><td class="a-r">17.55</td><td class="a-r">&minus;10.11</td></tr><tr><td class="a-l">Ain Sa&iuml;ss</td><td class="a-r">4.16</td><td class="a-r">13.35</td><td class="a-r">&minus;9.19</td></tr><tr><td class="a-l">S. Pellegrino Water</td><td class="a-r">7.92</td><td class="a-r">17.06</td><td class="a-r">&minus;9.14</td></tr></tbody></table></div>
+    </div>
+  </div>
+</section>
+
+<section class="ac-green">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">08</span>
+      <div><h2>Proof it actually runs</h2>
+      <p class="sec-sub">Captures from the local stack rather than a description of it. Each one is
+      labelled with the run it came from, because the page and the dashboard were photographed on
+      different days. Click any image for the full-size capture.</p></div>
+    </div>
+    <div class="shots">
+      <figure class="shot anim">
+        <a href="assets/airflow-dag-run.jpg" target="_blank" rel="noopener">
+          <img src="assets/airflow-dag-run.jpg" alt="The Airflow UI showing the smart_grocery_pipeline DAG run marked Success, with its three tasks extract_products, generate_prices and clean_validate_and_load each marked Success." loading="lazy" decoding="async"></a>
+        <figcaption><span class="shot-t">Airflow ran the three stages end to end</span>
+        <code>smart_grocery_pipeline</code> finished with status Success in 9.19&nbsp;seconds.
+        <code>extract_products</code>, <code>generate_prices</code> and
+        <code>clean_validate_and_load</code> each succeeded on the first try, all
+        <code>BashOperator</code>. These are the same three commands the stages in section&nbsp;03 describe.
+        <span class="shot-run">manual__2026-08-06T02:34:43 UTC</span></figcaption>
+      </figure>
+      <figure class="shot anim">
+        <a href="assets/spark-delta-streaming.jpg" target="_blank" rel="noopener">
+          <img src="assets/spark-delta-streaming.jpg" alt="The Spark web UI for the smart-grocery-streaming-prices application, listing three active jobs." loading="lazy" decoding="async"></a>
+        <figcaption><span class="shot-t">Three streaming queries, running at once</span>
+        The Spark&nbsp;3.5.9 UI for the <code>smart-grocery-streaming-prices</code> application, with
+        three active jobs. That is the valid-rows write, the quarantine write and the latest-price
+        aggregate described in section&nbsp;07 — one <code>readStream</code>, three sinks.
+        <span class="shot-run">Spark 3.5.9 · 06 Aug 2026 16:24 UTC</span></figcaption>
+      </figure>
+      <figure class="shot anim">
+        <a href="assets/dbt-tests.jpg" target="_blank" rel="noopener">
+          <img src="assets/dbt-tests.jpg" alt="A terminal showing dbt test output: four not_null tests on daily_price_summary, all passing, PASS=4 ERROR=0." loading="lazy" decoding="async"></a>
+        <figcaption><span class="shot-t">The gold model's tests pass</span>
+        <code>dbt test</code> on dbt&nbsp;1.12.0 with the postgres&nbsp;1.11.0 adapter: 1 model,
+        4 data tests, 3 sources. All four <code>not_null</code> assertions on
+        <code>daily_price_summary</code> pass — <code>PASS=4 WARN=0 ERROR=0</code>.
+        <span class="shot-run">dbt 1.12.0 · 4 of 4 passed</span></figcaption>
+      </figure>
+      <figure class="shot anim">
+        <a href="assets/dbt-lineage.jpg" target="_blank" rel="noopener">
+          <img src="assets/dbt-lineage.jpg" alt="The dbt docs lineage graph showing silver.prices and silver.products both feeding daily_price_summary." loading="lazy" decoding="async"></a>
+        <figcaption><span class="shot-t">Lineage is derived, not drawn by hand</span>
+        dbt's own graph: <code>silver.prices</code> and <code>silver.products</code> both feed
+        <code>gold.daily_price_summary</code>. The silver tables arrive as declared sources rather
+        than <code>ref</code>s, because Python loads them — which is why they show as sources here.
+        <span class="shot-run">dbt docs · generated from sources.yml</span></figcaption>
+      </figure>
+    </div>
+    <div class="shots shots-3">
+      <figure class="shot shot--tall anim">
+        <a href="assets/metabase-data-quality.jpg" target="_blank" rel="noopener">
+          <img src="assets/metabase-data-quality.jpg" alt="The Metabase Data Quality dashboard tab, showing 450 source records, 396 valid, 54 rejected and 12 percent rejected, a pipeline outcome chart, rejection reasons and rejections by dataset." loading="lazy" decoding="async"></a>
+        <figcaption><span class="shot-t">Metabase, data-quality tab</span>
+        450 source records, 396 valid, 54 rejected, 12% rejected — plus outcome per run, top
+        rejection reasons and rejections split by dataset. The same audit tables section&nbsp;05
+        charts, read straight from PostgreSQL.
+        <span class="shot-run">06 Aug 2026 02:34 UTC run</span></figcaption>
+      </figure>
+      <figure class="shot shot--tall anim">
+        <a href="assets/metabase-pricing-1.jpg" target="_blank" rel="noopener">
+          <img src="assets/metabase-pricing-1.jpg" alt="The Metabase pricing dashboard tab, showing average price 10.41 euro, promotion share 19.6 percent, promotion saving 7.7 percent, widest spread 21.32 euro, a price distribution histogram, stock status donut and average price by store." loading="lazy" decoding="async"></a>
+        <figcaption><span class="shot-t">Metabase, pricing tab</span>
+        Average price &euro;10.41 across 914 price records, 19.6% of them promotional, and a widest
+        single-product spread of &euro;21.32. The price distribution and the per-store averages are
+        the same two questions section&nbsp;06 answers.
+        <span class="shot-run">06 Aug 2026 02:34 UTC run</span></figcaption>
+      </figure>
+      <figure class="shot shot--tall anim">
+        <a href="assets/metabase-pricing-2.jpg" target="_blank" rel="noopener">
+          <img src="assets/metabase-pricing-2.jpg" alt="The lower half of the Metabase pricing tab: cheapest products, most expensive products, average price by category and average price by brand." loading="lazy" decoding="async"></a>
+        <figcaption><span class="shot-t">…and the rest of that tab</span>
+        Cheapest and most expensive products, then averages by category and by brand. Two things
+        here are worth admitting rather than cropping out: every product falls in one category, so
+        the category chart is a single block, and the brand chart's &ldquo;Other&nbsp;(5)&rdquo; bar
+        reads &euro;63.13 because the grouped remainder is summed, not averaged.
+        <span class="shot-run">06 Aug 2026 02:34 UTC run</span></figcaption>
+      </figure>
+    </div>
+    <p class="shots-note">The two Metabase captures describe the <strong>06 August 2026, 02:34 UTC</strong>
+    run: 450 source records, 396 valid, 54 rejected, 914 prices in silver. Every figure elsewhere on
+    this page describes the <strong>07 August 2026, 00:15 UTC</strong> run: 441, 389, 52 and 1,207.
+    Nothing disagrees — Metabase queries the live warehouse, these exports were simply taken a day
+    earlier, and Airflow advanced the warehouse in between. It is the same reason the footer dates
+    its own numbers.</p>
+  </div>
+</section>
+
+<section class="ac-plum">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">09</span>
+      <div><h2>What the first dashboard got wrong</h2>
+      <p class="sec-sub">The charts above are a rebuild. The first version was accurate and unreadable,
+      worth recording because the mistakes are the common ones.</p></div>
+    </div>
+    <div class="cards">
+      <div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><h3>A sunburst of ten classes</h3></div><p>Rejection reasons nested inside dataset, as two rings. Ten wedges, long labels, most truncated to “Unkno…”. Replaced by a plain bar chart, with the tail grouped into “Other”.</p></div><div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.6 12S6 5.8 12 5.8 21.4 12 21.4 12 18 18.2 12 18.2 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="2.6"/></svg><h3>The same question twice</h3></div><p>Rejection reasons appeared as both a pie and a treemap. Neither lets you compare 13.5% against 12.2%, which was the actual question.</p></div><div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H14a4 4 0 0 1 0 8h-4a4 4 0 0 0 0 8h5.5" transform="translate(0 -4)"/></svg><h3>A line chart across product names</h3></div><p>Twenty products joined by a line, implying each flows into the next. The smooth upward curve was just the sort order. It is a table.</p></div><div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20V4M4 20h16"/><path d="M8.5 20v-6M13 20V8.5M17.5 20v-9"/></svg><h3>A one-bar bar chart</h3></div><p>Average price by category, but the extract is filtered to beverages, so there is exactly one category. A single value is a number, not a chart.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="ac-clem">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">10</span>
+      <div><h2>What this platform does not do</h2>
+      <p class="sec-sub">Stated plainly, because a reviewer will find them anyway.</p></div>
+    </div>
+    <div class="cards">
+      <div class="mini anim" data-tone="warn"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/></svg><h3>Prices have no history</h3></div><p>Every row in a run carries the same timestamp, so there is no trend to plot. Spreading <code>event_timestamp</code> across a date range in the generator would fix it.</p></div><div class="mini anim" data-tone="warn"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/></svg><h3>One product category</h3></div><p>The extract is filtered to beverages, so <code>category</code> has a single distinct value. Any chart grouped by category is one bar, which is why that card was removed.</p></div><div class="mini anim" data-tone="warn"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/></svg><h3>Great Expectations is wired to nothing</h3></div><p>The suites exist and are correct, but no code calls them. They need a runner and a place in the pipeline before they count as a validation layer.</p></div><div class="mini anim" data-tone="warn"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/></svg><h3>Store differences aren&#x27;t real</h3></div><p>All five stores draw prices from the same distribution, so their averages sit within a few cents of each other by construction, not by finding.</p></div><div class="mini anim" data-tone="warn"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/></svg><h3>Credentials in the DAG</h3></div><p><code>DATABASE_URL</code> is hardcoded in <code>airflow_local/dags/smart_grocery_pipeline.py</code> instead of coming from the environment.</p></div><div class="mini anim" data-tone="warn"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/></svg><h3>The two routes check data separately</h3></div><p>The streaming route does not use <code>quality/semantic_validation.py</code>. It re-implements the rules as a Spark expression, and the store list is hardcoded in five files. Nothing stops the copies from drifting apart, and no test would notice.</p></div><div class="mini anim" data-tone="warn"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 16.8h.01"/></svg><h3>The streaming quarantine has never fired</h3></div><p>Its rules work, but the stream generator injects no faults the way <code>generate_prices.py</code> does, so every event has passed. The quarantine folder holds 400 empty files and not one rejected record.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="ac-teal">
+  <div class="wrap">
+    <div class="sec-head"><span class="tag">11</span>
+      <div><h2>Where this site goes next</h2>
+      <p class="sec-sub">This page is a proposal. Four things would turn it into the real site.</p></div>
+    </div>
+    <div class="cards">
+      <div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2.5 2.5 0 0 1 2 1 2.5 2.5 0 0 1 2-1h4.5A1.5 1.5 0 0 1 20 5.5v12a1.5 1.5 0 0 1-1.5 1.5H14a2.5 2.5 0 0 0-2 1 2.5 2.5 0 0 0-2-1H5.5A1.5 1.5 0 0 1 4 17.5z"/><path d="M12 5v14"/></svg><h3>Each stage becomes a page</h3></div><p>The eight stages here are summaries. Each deserves its own page with the full code walkthrough, the schema, and the decisions that were rejected.</p></div><div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg><h3>Live numbers instead of a snapshot</h3></div><p>Every figure on this page was read from the warehouse at one moment. The real site should query it, so the page is never stale.</p></div><div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20V4M4 20h16"/><path d="M8.5 20v-6M13 20V8.5M17.5 20v-9"/></svg><h3>Embed the dashboards</h3></div><p>Metabase can serve signed embeds, which would put the real, interactive charts on the page instead of static reproductions.</p></div><div class="mini anim"><div class="mini-head"><svg class="ico" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15.5 3.8a5 5 0 0 0-5.9 6.6L3.8 16.2a2 2 0 0 0 2.8 2.8l5.8-5.8a5 5 0 0 0 6.6-5.9l-3 3-2.5-2.5z"/></svg><h3>Show the code</h3></div><p>Syntax-highlighted excerpts pulled straight from the repo, so the page can never drift from what the code actually does.</p></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Product data from Open Food Facts. Prices, stores and faults are generated. No real supermarket
+    pricing is represented here.</p>
+    <p data-fig="footer.snapshot">Warehouse snapshot taken 07 August 2026, 00:15 UTC · 900 raw product rows · 3,129 raw price rows · 465 quarantined records across 10 runs. Airflow advances the warehouse daily, so these describe that run rather than this moment.</p>
+    <p>Streaming and cross-tier figures read from the Delta tables and
+    <code>data/gold/lakehouse.duckdb</code> in the same session · 305 streamed price events ·
+    94 products present in both routes.</p>
+  </div>
+</footer>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>/*
+ * anime.js v3.2.2
+ * (c) 2023 Julian Garnier
+ * Released under the MIT license
+ * animejs.com
+ */
+
+!function(n,e){"object"==typeof exports&&"undefined"!=typeof module?module.exports=e():"function"==typeof define&&define.amd?define(e):n.anime=e()}(this,function(){"use strict";var i={update:null,begin:null,loopBegin:null,changeBegin:null,change:null,changeComplete:null,loopComplete:null,complete:null,loop:1,direction:"normal",autoplay:!0,timelineOffset:0},M={duration:1e3,delay:0,endDelay:0,easing:"easeOutElastic(1, .5)",round:0},j=["translateX","translateY","translateZ","rotate","rotateX","rotateY","rotateZ","scale","scaleX","scaleY","scaleZ","skew","skewX","skewY","perspective","matrix","matrix3d"],l={CSS:{},springs:{}};function C(n,e,t){return Math.min(Math.max(n,e),t)}function u(n,e){return-1<n.indexOf(e)}function o(n,e){return n.apply(null,e)}var w={arr:function(n){return Array.isArray(n)},obj:function(n){return u(Object.prototype.toString.call(n),"Object")},pth:function(n){return w.obj(n)&&n.hasOwnProperty("totalLength")},svg:function(n){return n instanceof SVGElement},inp:function(n){return n instanceof HTMLInputElement},dom:function(n){return n.nodeType||w.svg(n)},str:function(n){return"string"==typeof n},fnc:function(n){return"function"==typeof n},und:function(n){return void 0===n},nil:function(n){return w.und(n)||null===n},hex:function(n){return/(^#[0-9A-F]{6}$)|(^#[0-9A-F]{3}$)/i.test(n)},rgb:function(n){return/^rgb/.test(n)},hsl:function(n){return/^hsl/.test(n)},col:function(n){return w.hex(n)||w.rgb(n)||w.hsl(n)},key:function(n){return!i.hasOwnProperty(n)&&!M.hasOwnProperty(n)&&"targets"!==n&&"keyframes"!==n}};function d(n){n=/\(([^)]+)\)/.exec(n);return n?n[1].split(",").map(function(n){return parseFloat(n)}):[]}function c(r,t){var n=d(r),e=C(w.und(n[0])?1:n[0],.1,100),a=C(w.und(n[1])?100:n[1],.1,100),o=C(w.und(n[2])?10:n[2],.1,100),n=C(w.und(n[3])?0:n[3],.1,100),u=Math.sqrt(a/e),i=o/(2*Math.sqrt(a*e)),c=i<1?u*Math.sqrt(1-i*i):0,s=i<1?(i*u-n)/c:-n+u;function f(n){var e=t?t*n/1e3:n,e=i<1?Math.exp(-e*i*u)*(+Math.cos(c*e)+s*Math.sin(c*e)):(1+s*e)*Math.exp(-e*u);return 0===n||1===n?n:1-e}return t?f:function(){var n=l.springs[r];if(n)return n;for(var e=0,t=0;;)if(1===f(e+=1/6)){if(16<=++t)break}else t=0;return n=e*(1/6)*1e3,l.springs[r]=n}}function q(e){return void 0===e&&(e=10),function(n){return Math.ceil(C(n,1e-6,1)*e)*(1/e)}}var H=function(b,e,M,t){if(0<=b&&b<=1&&0<=M&&M<=1){var x=new Float32Array(11);if(b!==e||M!==t)for(var n=0;n<11;++n)x[n]=k(.1*n,b,M);return function(n){return b===e&&M===t||0===n||1===n?n:k(r(n),e,t)}}function r(n){for(var e=0,t=1;10!==t&&x[t]<=n;++t)e+=.1;var r=e+.1*((n-x[--t])/(x[t+1]-x[t])),a=O(r,b,M);if(.001<=a){for(var o=n,u=r,i=b,c=M,s=0;s<4;++s){var f=O(u,i,c);if(0===f)return u;u-=(k(u,i,c)-o)/f}return u}if(0===a)return r;for(var l,d,p=n,h=e,g=e+.1,m=b,v=M,y=0;0<(l=k(d=h+(g-h)/2,m,v)-p)?g=d:h=d,1e-7<Math.abs(l)&&++y<10;);return d}};function r(n,e){return 1-3*e+3*n}function k(n,e,t){return((r(e,t)*n+(3*t-6*e))*n+3*e)*n}function O(n,e,t){return 3*r(e,t)*n*n+2*(3*t-6*e)*n+3*e}e={linear:function(){return function(n){return n}}},t={Sine:function(){return function(n){return 1-Math.cos(n*Math.PI/2)}},Expo:function(){return function(n){return n?Math.pow(2,10*n-10):0}},Circ:function(){return function(n){return 1-Math.sqrt(1-n*n)}},Back:function(){return function(n){return n*n*(3*n-2)}},Bounce:function(){return function(n){for(var e,t=4;n<((e=Math.pow(2,--t))-1)/11;);return 1/Math.pow(4,3-t)-7.5625*Math.pow((3*e-2)/22-n,2)}},Elastic:function(n,e){void 0===e&&(e=.5);var t=C(n=void 0===n?1:n,1,10),r=C(e,.1,2);return function(n){return 0===n||1===n?n:-t*Math.pow(2,10*(n-1))*Math.sin((n-1-r/(2*Math.PI)*Math.asin(1/t))*(2*Math.PI)/r)}}},["Quad","Cubic","Quart","Quint"].forEach(function(n,e){t[n]=function(){return function(n){return Math.pow(n,e+2)}}}),Object.keys(t).forEach(function(n){var r=t[n];e["easeIn"+n]=r,e["easeOut"+n]=function(e,t){return function(n){return 1-r(e,t)(1-n)}},e["easeInOut"+n]=function(e,t){return function(n){return n<.5?r(e,t)(2*n)/2:1-r(e,t)(-2*n+2)/2}},e["easeOutIn"+n]=function(e,t){return function(n){return n<.5?(1-r(e,t)(1-2*n))/2:(r(e,t)(2*n-1)+1)/2}}});var e,t,s=e;function P(n,e){if(w.fnc(n))return n;var t=n.split("(")[0],r=s[t],a=d(n);switch(t){case"spring":return c(n,e);case"cubicBezier":return o(H,a);case"steps":return o(q,a);default:return o(r,a)}}function a(n){try{return document.querySelectorAll(n)}catch(n){}}function I(n,e){for(var t,r=n.length,a=2<=arguments.length?e:void 0,o=[],u=0;u<r;u++)u in n&&(t=n[u],e.call(a,t,u,n))&&o.push(t);return o}function f(n){return n.reduce(function(n,e){return n.concat(w.arr(e)?f(e):e)},[])}function p(n){return w.arr(n)?n:(n=w.str(n)?a(n)||n:n)instanceof NodeList||n instanceof HTMLCollection?[].slice.call(n):[n]}function h(n,e){return n.some(function(n){return n===e})}function g(n){var e,t={};for(e in n)t[e]=n[e];return t}function x(n,e){var t,r=g(n);for(t in n)r[t]=(e.hasOwnProperty(t)?e:n)[t];return r}function D(n,e){var t,r=g(n);for(t in e)r[t]=(w.und(n[t])?e:n)[t];return r}function V(n){var e,t,r,a,o,u,i;return w.rgb(n)?(e=/rgb\((\d+,\s*[\d]+,\s*[\d]+)\)/g.exec(t=n))?"rgba("+e[1]+",1)":t:w.hex(n)?(e=(e=n).replace(/^#?([a-f\d])([a-f\d])([a-f\d])$/i,function(n,e,t,r){return e+e+t+t+r+r}),e=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(e),"rgba("+parseInt(e[1],16)+","+parseInt(e[2],16)+","+parseInt(e[3],16)+",1)"):w.hsl(n)?(t=/hsl\((\d+),\s*([\d.]+)%,\s*([\d.]+)%\)/g.exec(t=n)||/hsla\((\d+),\s*([\d.]+)%,\s*([\d.]+)%,\s*([\d.]+)\)/g.exec(t),n=parseInt(t[1],10)/360,u=parseInt(t[2],10)/100,i=parseInt(t[3],10)/100,t=t[4]||1,0==u?r=a=o=i:(r=c(u=2*i-(i=i<.5?i*(1+u):i+u-i*u),i,n+1/3),a=c(u,i,n),o=c(u,i,n-1/3)),"rgba("+255*r+","+255*a+","+255*o+","+t+")"):void 0;function c(n,e,t){return t<0&&(t+=1),1<t&&--t,t<1/6?n+6*(e-n)*t:t<.5?e:t<2/3?n+(e-n)*(2/3-t)*6:n}}function B(n){n=/[+-]?\d*\.?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?(%|px|pt|em|rem|in|cm|mm|ex|ch|pc|vw|vh|vmin|vmax|deg|rad|turn)?$/.exec(n);if(n)return n[1]}function m(n,e){return w.fnc(n)?n(e.target,e.id,e.total):n}function v(n,e){return n.getAttribute(e)}function y(n,e,t){var r,a,o;return h([t,"deg","rad","turn"],B(e))?e:(r=l.CSS[e+t],w.und(r)?(a=document.createElement(n.tagName),(n=n.parentNode&&n.parentNode!==document?n.parentNode:document.body).appendChild(a),a.style.position="absolute",a.style.width=100+t,o=100/a.offsetWidth,n.removeChild(a),n=o*parseFloat(e),l.CSS[e+t]=n):r)}function $(n,e,t){var r;if(e in n.style)return r=e.replace(/([a-z])([A-Z])/g,"$1-$2").toLowerCase(),e=n.style[e]||getComputedStyle(n).getPropertyValue(r)||"0",t?y(n,e,t):e}function b(n,e){return w.dom(n)&&!w.inp(n)&&(!w.nil(v(n,e))||w.svg(n)&&n[e])?"attribute":w.dom(n)&&h(j,e)?"transform":w.dom(n)&&"transform"!==e&&$(n,e)?"css":null!=n[e]?"object":void 0}function W(n){if(w.dom(n)){for(var e,t=n.style.transform||"",r=/(\w+)\(([^)]*)\)/g,a=new Map;e=r.exec(t);)a.set(e[1],e[2]);return a}}function X(n,e,t,r){var a=u(e,"scale")?1:0+(u(a=e,"translate")||"perspective"===a?"px":u(a,"rotate")||u(a,"skew")?"deg":void 0),o=W(n).get(e)||a;return t&&(t.transforms.list.set(e,o),t.transforms.last=e),r?y(n,o,r):o}function T(n,e,t,r){switch(b(n,e)){case"transform":return X(n,e,r,t);case"css":return $(n,e,t);case"attribute":return v(n,e);default:return n[e]||0}}function E(n,e){var t=/^(\*=|\+=|-=)/.exec(n);if(!t)return n;var r=B(n)||0,a=parseFloat(e),o=parseFloat(n.replace(t[0],""));switch(t[0][0]){case"+":return a+o+r;case"-":return a-o+r;case"*":return a*o+r}}function Y(n,e){var t;return w.col(n)?V(n):/\s/g.test(n)?n:(t=(t=B(n))?n.substr(0,n.length-t.length):n,e?t+e:t)}function F(n,e){return Math.sqrt(Math.pow(e.x-n.x,2)+Math.pow(e.y-n.y,2))}function Z(n){for(var e,t=n.points,r=0,a=0;a<t.numberOfItems;a++){var o=t.getItem(a);0<a&&(r+=F(e,o)),e=o}return r}function G(n){if(n.getTotalLength)return n.getTotalLength();switch(n.tagName.toLowerCase()){case"circle":return 2*Math.PI*v(n,"r");case"rect":return 2*v(t=n,"width")+2*v(t,"height");case"line":return F({x:v(t=n,"x1"),y:v(t,"y1")},{x:v(t,"x2"),y:v(t,"y2")});case"polyline":return Z(n);case"polygon":return e=n.points,Z(n)+F(e.getItem(e.numberOfItems-1),e.getItem(0))}var e,t}function Q(n,e){var e=e||{},n=e.el||function(n){for(var e=n.parentNode;w.svg(e)&&w.svg(e.parentNode);)e=e.parentNode;return e}(n),t=n.getBoundingClientRect(),r=v(n,"viewBox"),a=t.width,t=t.height,e=e.viewBox||(r?r.split(" "):[0,0,a,t]);return{el:n,viewBox:e,x:+e[0],y:+e[1],w:a,h:t,vW:e[2],vH:e[3]}}function z(n,e){var t=/[+-]?\d*\.?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,r=Y(w.pth(n)?n.totalLength:n,e)+"";return{original:r,numbers:r.match(t)?r.match(t).map(Number):[0],strings:w.str(n)||e?r.split(t):[]}}function A(n){return I(n?f(w.arr(n)?n.map(p):p(n)):[],function(n,e,t){return t.indexOf(n)===e})}function _(n){var t=A(n);return t.map(function(n,e){return{target:n,id:e,total:t.length,transforms:{list:W(n)}}})}function R(e){for(var t=I(f(e.map(function(n){return Object.keys(n)})),function(n){return w.key(n)}).reduce(function(n,e){return n.indexOf(e)<0&&n.push(e),n},[]),a={},n=0;n<t.length;n++)!function(n){var r=t[n];a[r]=e.map(function(n){var e,t={};for(e in n)w.key(e)?e==r&&(t.value=n[e]):t[e]=n[e];return t})}(n);return a}function J(n,e){var t,r=[],a=e.keyframes;for(t in e=a?D(R(a),e):e)w.key(t)&&r.push({name:t,tweens:function(n,t){var e,r=g(t),a=(/^spring/.test(r.easing)&&(r.duration=c(r.easing)),w.arr(n)&&(2===(e=n.length)&&!w.obj(n[0])?n={value:n}:w.fnc(t.duration)||(r.duration=t.duration/e)),w.arr(n)?n:[n]);return a.map(function(n,e){n=w.obj(n)&&!w.pth(n)?n:{value:n};return w.und(n.delay)&&(n.delay=e?0:t.delay),w.und(n.endDelay)&&(n.endDelay=e===a.length-1?t.endDelay:0),n}).map(function(n){return D(n,r)})}(e[t],n)});return r}function K(i,c){var s;return i.tweens.map(function(n){var n=function(n,e){var t,r={};for(t in n){var a=m(n[t],e);w.arr(a)&&1===(a=a.map(function(n){return m(n,e)})).length&&(a=a[0]),r[t]=a}return r.duration=parseFloat(r.duration),r.delay=parseFloat(r.delay),r}(n,c),e=n.value,t=w.arr(e)?e[1]:e,r=B(t),a=T(c.target,i.name,r,c),o=s?s.to.original:a,u=w.arr(e)?e[0]:o,a=B(u)||B(a),r=r||a;return w.und(t)&&(t=o),n.from=z(u,r),n.to=z(E(t,u),r),n.start=s?s.end:0,n.end=n.start+n.delay+n.duration+n.endDelay,n.easing=P(n.easing,n.duration),n.isPath=w.pth(e),n.isPathTargetInsideSVG=n.isPath&&w.svg(c.target),n.isColor=w.col(n.from.original),n.isColor&&(n.round=1),s=n})}var U={css:function(n,e,t){return n.style[e]=t},attribute:function(n,e,t){return n.setAttribute(e,t)},object:function(n,e,t){return n[e]=t},transform:function(n,e,t,r,a){var o;r.list.set(e,t),e!==r.last&&!a||(o="",r.list.forEach(function(n,e){o+=e+"("+n+") "}),n.style.transform=o)}};function nn(n,u){_(n).forEach(function(n){for(var e in u){var t=m(u[e],n),r=n.target,a=B(t),o=T(r,e,a,n),t=E(Y(t,a||B(o)),o),a=b(r,e);U[a](r,e,t,n.transforms,!0)}})}function en(n,e){return I(f(n.map(function(o){return e.map(function(n){var e,t,r=o,a=b(r.target,n.name);if(a)return t=(e=K(n,r))[e.length-1],{type:a,property:n.name,animatable:r,tweens:e,duration:t.end,delay:e[0].delay,endDelay:t.endDelay}})})),function(n){return!w.und(n)})}function tn(n,e){function t(n){return n.timelineOffset||0}var r=n.length,a={};return a.duration=r?Math.max.apply(Math,n.map(function(n){return t(n)+n.duration})):e.duration,a.delay=r?Math.min.apply(Math,n.map(function(n){return t(n)+n.delay})):e.delay,a.endDelay=r?a.duration-Math.max.apply(Math,n.map(function(n){return t(n)+n.duration-n.endDelay})):e.endDelay,a}var rn=0;var N,S=[],an=("undefined"!=typeof document&&document.addEventListener("visibilitychange",function(){L.suspendWhenDocumentHidden&&(n()?N=cancelAnimationFrame(N):(S.forEach(function(n){return n._onDocumentVisibility()}),an()))}),function(){!(N||n()&&L.suspendWhenDocumentHidden)&&0<S.length&&(N=requestAnimationFrame(on))});function on(n){for(var e=S.length,t=0;t<e;){var r=S[t];r.paused?(S.splice(t,1),e--):(r.tick(n),t++)}N=0<t?requestAnimationFrame(on):void 0}function n(){return document&&document.hidden}function L(n){var c,s=0,f=0,l=0,d=0,p=null;function h(n){var e=window.Promise&&new Promise(function(n){return p=n});return n.finished=e}e=x(i,n=n=void 0===n?{}:n),t=J(r=x(M,n),n),n=_(n.targets),r=tn(t=en(n,t),r),a=rn,rn++;var e,t,r,a,k=D(e,{id:a,children:[],animatables:n,animations:t,duration:r.duration,delay:r.delay,endDelay:r.endDelay});h(k);function g(){var n=k.direction;"alternate"!==n&&(k.direction="normal"!==n?"normal":"reverse"),k.reversed=!k.reversed,c.forEach(function(n){return n.reversed=k.reversed})}function m(n){return k.reversed?k.duration-n:n}function o(){s=0,f=m(k.currentTime)*(1/L.speed)}function v(n,e){e&&e.seek(n-e.timelineOffset)}function y(e){for(var n=0,t=k.animations,r=t.length;n<r;){for(var a=t[n],o=a.animatable,u=a.tweens,i=u.length-1,c=u[i],i=(i&&(c=I(u,function(n){return e<n.end})[0]||c),C(e-c.start-c.delay,0,c.duration)/c.duration),s=isNaN(i)?1:c.easing(i),f=c.to.strings,l=c.round,d=[],p=c.to.numbers.length,h=void 0,g=0;g<p;g++){var m=void 0,v=c.to.numbers[g],y=c.from.numbers[g]||0,m=c.isPath?function(e,t,n){function r(n){return e.el.getPointAtLength(1<=t+(n=void 0===n?0:n)?t+n:0)}var a=Q(e.el,e.svg),o=r(),u=r(-1),i=r(1),c=n?1:a.w/a.vW,s=n?1:a.h/a.vH;switch(e.property){case"x":return(o.x-a.x)*c;case"y":return(o.y-a.y)*s;case"angle":return 180*Math.atan2(i.y-u.y,i.x-u.x)/Math.PI}}(c.value,s*v,c.isPathTargetInsideSVG):y+s*(v-y);!l||c.isColor&&2<g||(m=Math.round(m*l)/l),d.push(m)}var b=f.length;if(b)for(var h=f[0],M=0;M<b;M++){f[M];var x=f[M+1],w=d[M];isNaN(w)||(h+=x?w+x:w+" ")}else h=d[0];U[a.type](o.target,a.property,h,o.transforms),a.currentValue=h,n++}}function b(n){k[n]&&!k.passThrough&&k[n](k)}function u(n){var e=k.duration,t=k.delay,r=e-k.endDelay,a=m(n);if(k.progress=C(a/e*100,0,100),k.reversePlayback=a<k.currentTime,c){var o=a;if(k.reversePlayback)for(var u=d;u--;)v(o,c[u]);else for(var i=0;i<d;i++)v(o,c[i])}!k.began&&0<k.currentTime&&(k.began=!0,b("begin")),!k.loopBegan&&0<k.currentTime&&(k.loopBegan=!0,b("loopBegin")),a<=t&&0!==k.currentTime&&y(0),(r<=a&&k.currentTime!==e||!e)&&y(e),t<a&&a<r?(k.changeBegan||(k.changeBegan=!0,k.changeCompleted=!1,b("changeBegin")),b("change"),y(a)):k.changeBegan&&(k.changeCompleted=!0,k.changeBegan=!1,b("changeComplete")),k.currentTime=C(a,0,e),k.began&&b("update"),e<=n&&(f=0,k.remaining&&!0!==k.remaining&&k.remaining--,k.remaining?(s=l,b("loopComplete"),k.loopBegan=!1,"alternate"===k.direction&&g()):(k.paused=!0,k.completed||(k.completed=!0,b("loopComplete"),b("complete"),!k.passThrough&&"Promise"in window&&(p(),h(k)))))}return k.reset=function(){var n=k.direction;k.passThrough=!1,k.currentTime=0,k.progress=0,k.paused=!0,k.began=!1,k.loopBegan=!1,k.changeBegan=!1,k.completed=!1,k.changeCompleted=!1,k.reversePlayback=!1,k.reversed="reverse"===n,k.remaining=k.loop,c=k.children;for(var e=d=c.length;e--;)k.children[e].reset();(k.reversed&&!0!==k.loop||"alternate"===n&&1===k.loop)&&k.remaining++,y(k.reversed?k.duration:0)},k._onDocumentVisibility=o,k.set=function(n,e){return nn(n,e),k},k.tick=function(n){u(((l=n)+(f-(s=s||l)))*L.speed)},k.seek=function(n){u(m(n))},k.pause=function(){k.paused=!0,o()},k.play=function(){k.paused&&(k.completed&&k.reset(),k.paused=!1,S.push(k),o(),an())},k.reverse=function(){g(),k.completed=!k.reversed,o()},k.restart=function(){k.reset(),k.play()},k.remove=function(n){cn(A(n),k)},k.reset(),k.autoplay&&k.play(),k}function un(n,e){for(var t=e.length;t--;)h(n,e[t].animatable.target)&&e.splice(t,1)}function cn(n,e){var t=e.animations,r=e.children;un(n,t);for(var a=r.length;a--;){var o=r[a],u=o.animations;un(n,u),u.length||o.children.length||r.splice(a,1)}t.length||r.length||e.pause()}return L.version="3.2.1",L.speed=1,L.suspendWhenDocumentHidden=!0,L.running=S,L.remove=function(n){for(var e=A(n),t=S.length;t--;)cn(e,S[t])},L.get=T,L.set=nn,L.convertPx=y,L.path=function(n,e){var t=w.str(n)?a(n)[0]:n,r=e||100;return function(n){return{property:n,el:t,svg:Q(t),totalLength:G(t)*(r/100)}}},L.setDashoffset=function(n){var e=G(n);return n.setAttribute("stroke-dasharray",e),e},L.stagger=function(n,e){var i=(e=void 0===e?{}:e).direction||"normal",c=e.easing?P(e.easing):null,s=e.grid,f=e.axis,l=e.from||0,d="first"===l,p="center"===l,h="last"===l,g=w.arr(n),m=g?parseFloat(n[0]):parseFloat(n),v=g?parseFloat(n[1]):0,y=B(g?n[1]:n)||0,b=e.start||0+(g?m:0),M=[],x=0;return function(n,e,t){if(d&&(l=0),p&&(l=(t-1)/2),h&&(l=t-1),!M.length){for(var r,a,o,u=0;u<t;u++)s?(r=p?(s[0]-1)/2:l%s[0],a=p?(s[1]-1)/2:Math.floor(l/s[0]),r=r-u%s[0],a=a-Math.floor(u/s[0]),o=Math.sqrt(r*r+a*a),"x"===f&&(o=-r),M.push(o="y"===f?-a:o)):M.push(Math.abs(l-u)),x=Math.max.apply(Math,M);c&&(M=M.map(function(n){return c(n/x)*x})),"reverse"===i&&(M=M.map(function(n){return f?n<0?-1*n:-n:Math.abs(x-n)}))}return b+(g?(v-m)/x:m)*(Math.round(100*M[e])/100)+y}},L.timeline=function(u){var i=L(u=void 0===u?{}:u);return i.duration=0,i.add=function(n,e){var t=S.indexOf(i),r=i.children;function a(n){n.passThrough=!0}-1<t&&S.splice(t,1);for(var o=0;o<r.length;o++)a(r[o]);t=D(n,x(M,u)),t.targets=t.targets||u.targets,n=i.duration,t.autoplay=!1,t.direction=i.direction,t.timelineOffset=w.und(e)?n:E(e,n),a(i),i.seek(t.timelineOffset),e=L(t),a(e),r.push(e),n=tn(r,u);return i.delay=n.delay,i.endDelay=n.endDelay,i.duration=n.duration,i.seek(0),i.reset(),i.autoplay&&i.play(),i},i},L.easing=P,L.penner=s,L.random=function(n,e){return Math.floor(Math.random()*(e-n+1))+n},L});</script>
+<script>
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------------- theme toggle ---------------- */
+const themeToggle = document.querySelector("[data-theme-toggle]");
+const themeLabel = document.querySelector("[data-theme-label]");
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme")
+      || (systemDark.matches ? "dark" : "light");
+}
+function markTheme() {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  const text = "Switch to " + next + " theme";
+  if (themeLabel) themeLabel.textContent = text;
+  if (themeToggle) themeToggle.setAttribute("title", text);
+}
+if (themeToggle) themeToggle.addEventListener("click", () => {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("sg-theme", next); } catch (e) { /* ignore */ }
+  markTheme();
+});
+systemDark.addEventListener("change", markTheme);
+// the artifact host can stamp data-theme too; keep the control in step
+new MutationObserver(markTheme).observe(document.documentElement,
+  { attributes: true, attributeFilter: ["data-theme"] });
+markTheme();
+
+/* ---------------- tooltips ---------------- */
+const tip = document.getElementById("tip");
+function showTip(event) {
+  const host = event.target.closest("[data-tip]");
+  if (!host) return;
+  tip.textContent = host.dataset.tip;
+  tip.dataset.on = "true";
+  const box = host.getBoundingClientRect(), w = tip.offsetWidth;
+  tip.style.left = Math.min(Math.max(8, box.left + box.width / 2 - w / 2), innerWidth - w - 8) + "px";
+  tip.style.top = Math.max(8, box.top - tip.offsetHeight - 9) + "px";
+}
+const hideTip = () => { tip.dataset.on = "false"; };
+addEventListener("pointerover", showTip);
+addEventListener("pointerout", hideTip);
+addEventListener("focusin", showTip);
+addEventListener("focusout", hideTip);
+addEventListener("scroll", hideTip, { passive: true });
+
+/* ---------------- layer tabs ---------------- */
+const flowNodes = [...document.querySelectorAll(".flow-node")];
+const layerBox = document.querySelector(".layers");
+flowNodes.forEach((node, index) => {
+  node.addEventListener("click", () => selectLayer(index));
+  node.addEventListener("keydown", (event) => {
+    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = (index + step + flowNodes.length) % flowNodes.length;
+    selectLayer(next);
+    flowNodes[next].focus();
+  });
+});
+function selectLayer(index) {
+  if (index < 0) return;
+  const active = flowNodes[index].dataset.flow;
+  flowNodes.forEach((node, i) => {
+    node.setAttribute("aria-selected", String(i === index));
+    node.dataset.active = String(i === index);
+    document.getElementById("panel-" + node.dataset.flow).hidden = i !== index;
+  });
+  if (layerBox) layerBox.dataset.layer = active;
+  const panel = document.getElementById("panel-" + active);
+  if (!reduce) anime({ targets: panel, opacity: [0, 1], translateY: [8, 0], duration: 340, easing: "easeOutQuad" });
+}
+selectLayer(0);
+
+/* ---------------- steppers ---------------- */
+document.querySelectorAll(".stepper").forEach((stepper) => {
+  const steps = [...stepper.querySelectorAll(".step")];
+  const dots = [...stepper.querySelectorAll(".dot")];
+  const back = stepper.querySelector('[data-move="-1"]');
+  const next = stepper.querySelector('[data-move="1"]');
+  const label = next.querySelector("span");
+  let current = 0;
+  function render(animate) {
+    steps.forEach((step, i) => { step.hidden = i !== current; });
+    dots.forEach((dot, i) => { dot.dataset.on = String(i <= current); });
+    back.disabled = current === 0;
+    next.disabled = current === steps.length - 1;
+    label.textContent = current === steps.length - 1 ? "End of the road" : "Next step";
+    if (animate && !reduce) {
+      anime({ targets: steps[current], opacity: [0, 1], translateX: [14, 0], duration: 320, easing: "easeOutQuad" });
+    }
+  }
+  dots.forEach((dot, i) => dot.addEventListener("click", () => { current = i; render(true); }));
+  back.addEventListener("click", () => { current = Math.max(0, current - 1); render(true); });
+  next.addEventListener("click", () => { current = Math.min(steps.length - 1, current + 1); render(true); });
+  render(false);
+});
+
+/* ---------------- track switch ---------------- */
+const trackButtons = [...document.querySelectorAll(".track-btn")];
+trackButtons.forEach((button) => button.addEventListener("click", () => {
+  trackButtons.forEach((other) => {
+    const on = other === button;
+    other.setAttribute("aria-pressed", String(on));
+    const panel = document.querySelector(`[data-track-panel="${other.dataset.show}"]`);
+    panel.hidden = !on;
+    if (on && !reduce) anime({ targets: panel, opacity: [0, 1], translateY: [10, 0], duration: 340, easing: "easeOutQuad" });
+  });
+}));
+
+/* ---------------- copy ---------------- */
+document.querySelectorAll(".copy").forEach((button) => {
+  const label = button.querySelector("span");
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy);
+      label.textContent = "Copied";
+      button.dataset.done = "true";
+      setTimeout(() => { label.textContent = "Copy"; button.dataset.done = "false"; }, 1500);
+    } catch { label.textContent = "Press \u2318C"; }
+  });
+});
+
+/* ---------------- entrance + scroll motion ---------------- */
+function paintFinal() {
+  document.querySelectorAll(".bar-fill").forEach((el) => { el.style.width = el.dataset.w + "%"; });
+  document.querySelectorAll(".seg").forEach((el) => { el.style.height = el.dataset.h + "%"; });
+  document.querySelectorAll("[data-count]").forEach((el) => {
+    const decimals = Number(el.dataset.decimals || 0);
+    el.textContent = Number(el.dataset.count).toLocaleString(undefined,
+      { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + (el.dataset.suffix || "");
+  });
+}
+
+if (reduce) {
+  paintFinal();
+} else {
+  anime({ targets: ".hero-mark, h1, .lede, .snapshot", opacity: [0, 1], translateY: [16, 0],
+           delay: anime.stagger(90), duration: 640, easing: "easeOutCubic" });
+  anime({ targets: ".kpi", opacity: [0, 1], translateY: [22, 0], scale: [.97, 1],
+           delay: anime.stagger(80, { start: 220 }), duration: 640, easing: "easeOutCubic" });
+  document.querySelectorAll("[data-count]").forEach((el) => {
+    const decimals = Number(el.dataset.decimals || 0);
+    const proxy = { n: 0 };
+    anime({ targets: proxy, n: Number(el.dataset.count), duration: 1500, delay: 320,
+             easing: "easeOutExpo",
+             update: () => {
+               el.textContent = proxy.n.toLocaleString(undefined,
+                 { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + (el.dataset.suffix || "");
+             } });
+  });
+
+  const seen = new WeakSet();
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting || seen.has(entry.target)) return;
+      seen.add(entry.target);
+      const node = entry.target;
+
+      if (node.classList.contains("anim")) {
+        // Cards in one grid row cross the threshold together. Delay each by its
+        // position among its siblings so the row resolves left-to-right instead of
+        // flashing in as a block. One direction, one easing, runs once.
+        const siblings = [...node.parentElement.children].filter((el) => el.classList.contains("anim"));
+        const order = Math.max(0, siblings.indexOf(node));
+        anime({ targets: node, opacity: [0, 1], translateY: [20, 0], duration: 620,
+                 delay: Math.min(order, 5) * 60, easing: "easeOutCubic" });
+      }
+      const fills = node.querySelectorAll(".bar-fill");
+      if (fills.length) {
+        anime({ targets: fills, width: (el) => el.dataset.w + "%", duration: 900,
+                 delay: anime.stagger(55), easing: "easeOutQuart" });
+      }
+      const segs = node.querySelectorAll(".seg");
+      if (segs.length) {
+        anime({ targets: segs, height: (el) => el.dataset.h + "%", duration: 780,
+                 delay: anime.stagger(28), easing: "easeOutQuart" });
+      }
+      if (node.classList.contains("diagram")) {
+        anime({ targets: node.querySelectorAll(".dg-item"), opacity: [0, 1], translateY: [14, 0],
+                 delay: anime.stagger(70), duration: 560, easing: "easeOutCubic" });
+        const lines = node.querySelectorAll(".dg-arrow");
+        lines.forEach((line) => {
+          const length = line.getTotalLength ? line.getTotalLength() : 40;
+          line.style.strokeDasharray = length;
+          line.style.strokeDashoffset = length;
+        });
+        anime({ targets: lines, strokeDashoffset: [anime.setDashoffset, 0], duration: 620,
+                 delay: anime.stagger(60, { start: 260 }), easing: "easeInOutQuad",
+                 complete: () => lines.forEach((line) => {
+                   line.style.strokeDasharray = line.classList.contains("dg-dash") ? "5 5" : "none";
+                   line.style.strokeDashoffset = "0";
+                 }) });
+      }
+    });
+  }, { rootMargin: "0px 0px -12% 0px", threshold: .12 });
+
+  document.querySelectorAll(".anim").forEach((el) => { el.style.opacity = 0; });
+  document.querySelectorAll(".anim, .panel, .diagram").forEach((el) => observer.observe(el));
+
+  // Failsafe: if anything has not been revealed after 6s (fast scroll, background
+  // tab, animation frames starved), paint the final state outright.
+  setTimeout(() => {
+    document.querySelectorAll(".anim").forEach((el) => {
+      if (!Number(el.style.opacity)) el.style.opacity = 1;
+    });
+    document.querySelectorAll(".dg-item").forEach((el) => { el.style.opacity = 1; });
+    document.querySelectorAll(".dg-arrow").forEach((el) => {
+      el.style.strokeDasharray = el.classList.contains("dg-dash") ? "5 5" : "none";
+      el.style.strokeDashoffset = "0";
+    });
+    paintFinal();
+  }, 6000);
+}
+</script>
