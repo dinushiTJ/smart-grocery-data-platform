@@ -1,0 +1,15 @@
+datasets:
+  products:
+    source: data/bronze/products/*.json
+    expectations:
+      - barcode_not_null
+      - product_name_not_null
+      - energy_kcal_100g_in_range
+  prices:
+    source: data/bronze/prices/*.csv
+    expectations:
+      - event_id_unique
+      - price_positive
+      - price_below_limit
+      - store_id_known
+      - event_timestamp_not_null
