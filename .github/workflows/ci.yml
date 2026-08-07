@@ -27,3 +27,28 @@ jobs:
       - name: Run unit tests
         run: |
           pytest -v
+
+      # House style: no em dashes anywhere in the prose or the page. Enforced here
+      # so it survives future edits instead of relying on anyone remembering.
+      - name: Check for em dashes
+        run: |
+          # Both needles are built at runtime. Writing them literally would make this
+          # file match its own check.
+          DASH=$(printf '\xe2\x80\x94')
+          ENTITY="&$(printf 'mdash');"
+          if git grep -n -I -e "$DASH" -e "$ENTITY" -- '*.md' '*.html' '*.py' '*.yml' '*.sql' '*.txt'; then
+            echo "::error::Found em dashes in the lines above. Use a comma, colon, or full stop."
+            exit 1
+          fi
+          echo "No em dashes found."
+
+      # The site must not reach outside its own directory. A browser opening
+      # site/index.html over file:// may be denied access to a sibling folder,
+      # which silently breaks every screenshot on the page.
+      - name: Check the site references nothing outside site/
+        run: |
+          if grep -n -E '(src|href)="\.\./' site/index.html; then
+            echo "::error::site/index.html references a path outside site/."
+            exit 1
+          fi
+          echo "No path escapes site/."

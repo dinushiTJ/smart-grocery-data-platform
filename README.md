@@ -1,6 +1,28 @@
 # Smart Grocery Data Lakehouse
 
-A local data platform that combines Open Food Facts product data with generated supermarket prices. It demonstrates ingestion, lakehouse processing, warehouse modeling, data quality, orchestration, streaming, and analytics.
+**[Read the walkthrough](https://dinushitj.github.io/smart-grocery-data-platform/)**
+&middot; [Why it is built this way](docs/interview-notes.md)
+
+A local data platform that takes real product data from Open Food Facts, generates supermarket
+prices for it, and pushes both through a validated medallion warehouse into dbt models and
+Metabase dashboards. A second, separate path streams the same price events through Spark into
+Delta tables, and a DuckDB layer is the only thing that can query both at once.
+
+The point is not the grocery data. It is that **every record can be accounted for**: what
+arrived, what was rejected, why, and by which run. Raw data lands in `bronze` before validation,
+rejects go to `audit.quarantine` with their reason attached, and every run opens and closes a
+row in `audit.pipeline_runs`. The price generator injects faults on purpose, at roughly 8% of
+rows, so the quarantine path is exercised on every run rather than sitting untested.
+
+Everything runs locally on open-source tools with `docker compose up -d`. No cloud account is
+needed.
+
+### What it demonstrates
+
+Batch and streaming ingestion, medallion modelling with enforced keys and constraints, layered
+data quality (deterministic rules, an optional local LLM that can flag but never overrule, and
+dbt tests), orchestration with Airflow, cross-tier reconciliation in DuckDB, SQL index tuning,
+and a documentation site whose every figure is generated from the database rather than typed.
 
 ## Open-Source Stack
 
@@ -219,7 +241,7 @@ Composite indexes on `(barcode, event_timestamp DESC)` and `(store_id, event_tim
 
 ## Dashboard Screenshots
 
-Metabase runs at `http://localhost:3001`. The dashboard cards are defined in `dashboard/metabase_queries.sql`. The dashboard has two tabs, both exported below. They were captured from the `2026-08-06T02:34` run, so their counts are that run's, not the latest one's.
+Metabase runs at `http://localhost:3001`. The dashboard cards are defined in `dashboard/metabase_queries.sql`. The dashboard has two tabs, both exported below. They were captured from the `2026-08-07T00:15` run, so their counts match the latest run and the figures in `site/index.html`.
 
 ![Metabase data-quality tab](docs/screenshots/metabase-data-quality.png)
 
@@ -269,12 +291,48 @@ The manually triggered Airflow run `manual__2026-08-06T02:34:43.594953+00:00` co
 | `generate_prices` | success |
 | `clean_validate_and_load` | success |
 
-That run's audit row reported `450` source records, `396` valid records, and `54` rejected records, leaving `96` silver products and `914` silver price records. It is the run both Metabase exports above show.
+That run's audit row reported `450` source records, `396` valid records, and `54` rejected records.
 
-Airflow has advanced the warehouse since. The most recent successful run, `2026-08-07T00:15` UTC, reported `441` source records, `389` valid, and `52` rejected. PostgreSQL currently holds `97` silver products, `1,207` silver prices and `465` quarantined records across `10` runs. `site/index.html` always describes this latest run — `python3 site/refresh_figures.py --check` fails if it has drifted.
+Airflow and manual runs have advanced the warehouse since. The most recent successful run, `2026-08-07T03:17` UTC, reported `446` source records, `406` valid, and `40` rejected. PostgreSQL currently holds `97` silver products, `1,517` silver prices and `505` quarantined records across `11` runs.
+
+Those figures are not copied by hand. Every number on the site carries a `data-fig` attribute and is written from the source of truth by `site/refresh_figures.py` (PostgreSQL) and `site/refresh_stream_figures.py` (DuckDB). Both accept `--check`, which exits non-zero when the page has drifted, so a stale page is a build failure rather than something a reader has to catch.
 
 Spark and Delta verification produced Delta transaction logs and Parquet files under `data/stream/delta_prices/` and `data/stream/latest_prices/`. The Delta commit metadata identifies Apache Spark `3.5.9`, Delta Lake `3.3.2`, append streaming output, and a ten-minute watermark.
 
 The local test suite currently passes with `14 passed`.
 
-A rendered walkthrough of the whole platform, with these captures embedded and every warehouse figure refreshed from PostgreSQL, is in [`site/index.html`](site/index.html).
+## The documentation site
+
+The walkthrough is published at
+**https://dinushitj.github.io/smart-grocery-data-platform/** and deploys automatically from
+`site/` on every push to `main` via `.github/workflows/pages.yml`.
+
+To view it locally, open [`site/walkthrough.html`](site/walkthrough.html). That is a single
+self-contained file with the screenshots inlined, because a browser opening
+`site/index.html` over `file://` may be denied access to the `assets` folder beside it and
+would show the page with every screenshot missing. Serving the directory over HTTP works too:
+
+```bash
+cd site && python3 -m http.server 8000
+```
+
+Regenerate in this order after any change:
+
+```bash
+python3 site/refresh_figures.py         # warehouse figures, from PostgreSQL
+python3 site/refresh_stream_figures.py  # streaming and cross-tier figures, from DuckDB
+python3 site/build_assets.py            # web copies of the screenshots
+python3 site/build_standalone.py        # the self-contained walkthrough.html
+```
+
+## Security notes
+
+- No credentials are committed. `.env` is gitignored and has never been in the history.
+  `.env.example` lists every variable the code reads, with placeholder values.
+- `compose.yaml` takes `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB` from `.env`.
+- The pipeline requires `DATABASE_URL` from the environment and refuses to start without it.
+  `airflow_local/docker-compose.yaml` enforces the same with `${DATABASE_URL:?...}`.
+- Airflow's own metadata database, admin login and API signing key fall back to defaults in
+  `airflow_local/docker-compose.yaml`. Those are intended for a local stack only and must not
+  be reused anywhere shared.
+- Supermarket prices, stores and faults are generated. No real retailer pricing is represented.
