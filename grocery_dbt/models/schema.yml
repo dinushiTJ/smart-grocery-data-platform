@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: daily_price_summary
+    description: Daily product price statistics across stores.
+    columns:
+      - name: price_date
+        tests:
+          - not_null
+      - name: barcode
+        tests:
+          - not_null
+      - name: product_name
+        tests:
+          - not_null
+      - name: minimum_price
+        tests:
+          - not_null

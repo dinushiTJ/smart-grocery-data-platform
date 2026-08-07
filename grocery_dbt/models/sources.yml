@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: silver
+    schema: silver
+    tables:
+      - name: products
+      - name: stores
+      - name: prices
+        loaded_at_field: loaded_at
