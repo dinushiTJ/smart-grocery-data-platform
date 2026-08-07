@@ -1,0 +1,36 @@
+.env
+airflow_local/.env
+CLAUDE.md
+AGENTS.md
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+logs/
+grocery_dbt/target/
+grocery_dbt/logs/
+airflow_local/logs/*
+!airflow_local/logs/.gitkeep
+airflow_local/airflow.db
+data/bronze/*
+data/silver/*
+data/gold/*
+data/quarantine/*
+!data/bronze/.gitkeep
+!data/silver/.gitkeep
+!data/gold/.gitkeep
+!data/quarantine/.gitkeep
+data/stream/incoming/*
+data/stream/checkpoints/*
+data/stream/delta_prices/*
+data/stream/quarantine/*
+data/stream/latest_prices/*
+!data/stream/incoming/.gitkeep
+!data/stream/checkpoints/.gitkeep
+!data/stream/delta_prices/.gitkeep
+!data/stream/quarantine/.gitkeep
+
+# Metabase community driver jar (82 MB, downloaded not committed)
+metabase-plugins/*.jar
+# Local Metabase sample databases may contain names, addresses, and email data.
+metabase-plugins/*.sqlite

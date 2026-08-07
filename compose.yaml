@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: grocery_postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  metabase:
+    # Built from metabase.Dockerfile: the upstream image is Alpine, and the
+    # DuckDB driver's native library needs glibc.
+    build:
+      context: .
+      dockerfile: metabase.Dockerfile
+    image: grocery-metabase:v0.63.3-glibc
+    container_name: grocery_metabase
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - metabase_data:/metabase-data
+      # The DuckDB driver is a community plugin, so Metabase loads it from here.
+      # It is what lets the dashboards read the Delta lake instead of only Postgres.
+      - ./metabase-plugins:/plugins
+      # The lakehouse DuckDB file, and the Delta tables it reads in place.
+      - ./data:/data:ro
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+      MB_PLUGINS_DIR: /plugins
+
+volumes:
+  postgres_data:
+    name: grocery_postgres_data
+  metabase_data:
