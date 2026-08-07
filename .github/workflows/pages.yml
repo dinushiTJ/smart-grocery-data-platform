@@ -1,8 +1,7 @@
 name: Deploy site to GitHub Pages
 
-# Publishes the site/ directory. index.html references everything relatively
-# (assets/, walkthrough.html), so it works unchanged from the /<repo>/ subpath
-# that Pages serves a project site from.
+# Publishes the standalone walkthrough as the Pages homepage. The regular
+# site/index.html remains available for local serving from the repository.
 
 on:
   push:
@@ -36,10 +35,15 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload site directory
+      - name: Prepare standalone walkthrough
+        run: |
+          mkdir -p _site
+          cp site/walkthrough.html _site/index.html
+
+      - name: Upload walkthrough
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
 
       - name: Deploy
         id: deployment
